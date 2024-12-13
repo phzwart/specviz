@@ -99,6 +99,15 @@ class CombinedExplorer:
         </html>
         """
 
+        # Add properties to store selections
+        self.selected_points = None
+        self.selection_callback = None
+
+        # Pass the callback to child explorers
+        self.latent_explorer.set_selection_callback(self._update_selection)
+        if self.spatial_explorer:
+            self.spatial_explorer.set_selection_callback(self._update_selection)
+
     def run(self, debug=False):
         """Run the combined explorer"""
         # Start microservices in separate threads
@@ -186,3 +195,25 @@ class CombinedExplorer:
             )
 
             return latent_url, spatial_url
+
+    def _update_selection(self, selected_points):
+        """Callback to update the selected points"""
+        self.selected_points = selected_points
+        if self.selection_callback:
+            self.selection_callback(selected_points)
+
+    def on_selection(self, callback):
+        """Register a callback to be called when selection changes
+
+        Args:
+            callback: Function that takes selected points as argument
+        """
+        self.selection_callback = callback
+
+    def get_selected_points(self):
+        """Get currently selected points
+
+        Returns:
+            List of selected point indices or None if no selection
+        """
+        return self.selected_points

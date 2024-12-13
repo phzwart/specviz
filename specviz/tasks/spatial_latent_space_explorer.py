@@ -69,6 +69,12 @@ class SpatialLatentSpaceExplorer(BaseExplorer):
         self.app.layout = self._create_layout()
         self._setup_callbacks(self.app)
 
+        self.selection_callback = None
+
+    def set_selection_callback(self, callback):
+        """Set callback for selection changes"""
+        self.selection_callback = callback
+
     def _create_layout(self):
         """Create the app layout"""
         return html.Div(
@@ -295,6 +301,10 @@ class SpatialLatentSpaceExplorer(BaseExplorer):
             selected_indices = sorted(
                 point["pointIndex"] for point in self.current_selection["points"]
             )
+
+            # Add this at the point where you determine selected_indices
+            if self.selection_callback:
+                self.selection_callback(selected_indices)
 
             # Create plots
             spectrum_fig = go.Figure()

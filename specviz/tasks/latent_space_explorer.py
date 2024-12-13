@@ -60,6 +60,23 @@ class LatentSpaceExplorer(BaseExplorer):
         self.app.layout = self._create_layout()
         self._setup_callbacks(self.app)
 
+        self.selection_callback = None
+
+    def set_selection_callback(self, callback):
+        """Set callback for selection changes"""
+        self.selection_callback = callback
+
+    def _handle_selection(self, selected_data):
+        """Handle selection events from the plot"""
+        if selected_data is None:
+            selected_points = None
+        else:
+            # Extract point indices from the selection data
+            selected_points = [p["pointIndex"] for p in selected_data["points"]]
+
+        if self.selection_callback:
+            self.selection_callback(selected_points)
+
     def _create_layout(self):
         """Create the app layout"""
         return html.Div(
