@@ -385,19 +385,11 @@ class LatentSpaceExplorer(BaseExplorer):
 
             return spectrum_fig, scatter_fig
 
-    def run(self, debug=False, port=8050):
-        """Run the Dash application
+    def run(self, debug=False, port=8054):
+        # Suppress Werkzeug logging
+        import logging
 
-        Args:
-            debug (bool): Whether to run in debug mode
-            port (int): Port number to run on
-        """
-        import socket
-
-        hostname = socket.gethostname()
-        ip_address = socket.gethostbyname(hostname)
-        print(f"Dashboard running at:")
-        print(f"    Local URL: http://127.0.0.1:{port}/")
-        print(f"    Network URL: http://{ip_address}:{port}/")
+        log = logging.getLogger("werkzeug")
+        log.setLevel(logging.ERROR)
 
         self.app.run_server(debug=debug, port=port, host="0.0.0.0")

@@ -7,7 +7,7 @@ from dash import dcc, html
 from dash.dependencies import Input, Output
 
 from .latent_space_explorer import LatentSpaceExplorer
-from .spatial_latent_space_explorer import SpatialLatentSpaceExplorer
+from .old_spatial_latent_space_explorer import SpatialLatentSpaceExplorer
 
 
 class CombinedExplorer:
