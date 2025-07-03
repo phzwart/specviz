@@ -1,0 +1,7 @@
+
+=== Calculating Initial Level ===
+Error calculating initial level: 'MeasurementPlanner' object has no attribute 'redis_client'
+Dash is running on http://127.0.0.1:8053/
+
+ * Serving Flask app 'measurement_planner'
+ * Debug mode: off

@@ -1,0 +1,20 @@
+
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Classification Verification Plot</title>
+                    <style>
+                        body { display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+                        img { max-width: 90vw; max-height: 90vh; object-fit: contain; }
+                    </style>
+                    <script>
+                        function refreshImage() {
+                            document.getElementById('plot').src = 'export_verification.png?' + new Date().getTime();
+                        }
+                    </script>
+                </head>
+                <body>
+                    <img id="plot" src="export_verification.png" onclick="refreshImage()">
+                </body>
+                </html>
+                
