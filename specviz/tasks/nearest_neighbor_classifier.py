@@ -1834,7 +1834,7 @@ class NearestNeighborClassifierApp:
                     # Check if table already exists
                     table_name = f"knn_model_{model_name}"
                     if check_table_exists(conn, table_name):
-                        return f"Error: Table '{table_name}' already exists", True
+                        return f"Error: Table '{table_name}' already exists. Please use a different model name.", True
 
                     # Get all HCD indices and compute probabilities for ALL HCD points
                     hcd_df = read_df_from_db(conn, "HCD")
