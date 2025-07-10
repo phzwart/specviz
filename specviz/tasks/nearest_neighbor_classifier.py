@@ -1585,38 +1585,53 @@ class NearestNeighborClassifierApp:
                 class_0_probs = result["calibration_proba"][class_0_mask, 1]
 
                 print(f"\nClass 1 calibration scores ({len(class_1_probs)} points):")
-                print(f"  Min: {class_1_probs.min():.4f}")
-                print(f"  Max: {class_1_probs.max():.4f}")
-                print(f"  Mean: {class_1_probs.mean():.4f}")
-                print(f"  Std: {class_1_probs.std():.4f}")
-                print(
-                    f"  Percentiles: 25%={np.percentile(class_1_probs, 25):.4f}, 50%={np.percentile(class_1_probs, 50):.4f}, 75%={np.percentile(class_1_probs, 75):.4f}, 95%={np.percentile(class_1_probs, 95):.4f}, 99%={np.percentile(class_1_probs, 99):.4f}"
-                )
+                if len(class_1_probs) > 0:
+                    print(f"  Min: {class_1_probs.min():.4f}")
+                    print(f"  Max: {class_1_probs.max():.4f}")
+                    print(f"  Mean: {class_1_probs.mean():.4f}")
+                    print(f"  Std: {class_1_probs.std():.4f}")
+                    print(
+                        f"  Percentiles: 25%={np.percentile(class_1_probs, 25):.4f}, 50%={np.percentile(class_1_probs, 50):.4f}, 75%={np.percentile(class_1_probs, 75):.4f}, 95%={np.percentile(class_1_probs, 95):.4f}, 99%={np.percentile(class_1_probs, 99):.4f}"
+                    )
+                else:
+                    print("  No class 1 samples in calibration set")
 
                 print(f"\nClass 0 calibration scores ({len(class_0_probs)} points):")
-                print(f"  Min: {class_0_probs.min():.4f}")
-                print(f"  Max: {class_0_probs.max():.4f}")
-                print(f"  Mean: {class_0_probs.mean():.4f}")
-                print(f"  Std: {class_0_probs.std():.4f}")
+                if len(class_0_probs) > 0:
+                    print(f"  Min: {class_0_probs.min():.4f}")
+                    print(f"  Max: {class_0_probs.max():.4f}")
+                    print(f"  Mean: {class_0_probs.mean():.4f}")
+                    print(f"  Std: {class_0_probs.std():.4f}")
+                else:
+                    print("  No class 0 samples in calibration set")
 
                 # Create simple ASCII dot plot
-                print(f"\nClass 1 probability distribution (dot plot):")
-                print("0.0" + "=" * 50 + "1.0")
-                for i, prob in enumerate(sorted(class_1_probs)):
-                    pos = int(prob * 50)
-                    marker = (
-                        "●" if i < len(class_1_probs) - 1 else "●"
-                    )  # Use filled circle
-                    print(" " * pos + marker)
-                print("0.0" + "=" * 50 + "1.0")
+                if len(class_1_probs) > 0:
+                    print(f"\nClass 1 probability distribution (dot plot):")
+                    print("0.0" + "=" * 50 + "1.0")
+                    for i, prob in enumerate(sorted(class_1_probs)):
+                        pos = int(prob * 50)
+                        marker = (
+                            "●" if i < len(class_1_probs) - 1 else "●"
+                        )  # Use filled circle
+                        print(" " * pos + marker)
+                    print("0.0" + "=" * 50 + "1.0")
 
-                # Print raw scores as lists for copy-paste verification
-                print(
-                    f"\nClass 1 scores (sorted): {[float(x) for x in sorted(class_1_probs)]}"
-                )
-                print(
-                    f"Class 0 scores (sorted): {[float(x) for x in sorted(class_0_probs)]}"
-                )
+                    # Print raw scores as lists for copy-paste verification
+                    print(
+                        f"\nClass 1 scores (sorted): {[float(x) for x in sorted(class_1_probs)]}"
+                    )
+                else:
+                    print(
+                        "\nClass 1 probability distribution (dot plot): No class 1 samples"
+                    )
+                    print("\nClass 1 scores (sorted): []")
+                if len(class_0_probs) > 0:
+                    print(
+                        f"Class 0 scores (sorted): {[float(x) for x in sorted(class_0_probs)]}"
+                    )
+                else:
+                    print("Class 0 scores (sorted): []")
 
                 for alpha in error_rates:
                     confidence_level = 1 - alpha
@@ -1836,40 +1851,55 @@ class NearestNeighborClassifierApp:
                     print(
                         f"\nExport: Class 1 calibration scores ({len(class_1_probs)} points):"
                     )
-                    print(f"  Min: {class_1_probs.min():.4f}")
-                    print(f"  Max: {class_1_probs.max():.4f}")
-                    print(f"  Mean: {class_1_probs.mean():.4f}")
-                    print(f"  Std: {class_1_probs.std():.4f}")
-                    print(
-                        f"  Percentiles: 25%={np.percentile(class_1_probs, 25):.4f}, 50%={np.percentile(class_1_probs, 50):.4f}, 75%={np.percentile(class_1_probs, 75):.4f}, 95%={np.percentile(class_1_probs, 95):.4f}, 99%={np.percentile(class_1_probs, 99):.4f}"
-                    )
+                    if len(class_1_probs) > 0:
+                        print(f"  Min: {class_1_probs.min():.4f}")
+                        print(f"  Max: {class_1_probs.max():.4f}")
+                        print(f"  Mean: {class_1_probs.mean():.4f}")
+                        print(f"  Std: {class_1_probs.std():.4f}")
+                        print(
+                            f"  Percentiles: 25%={np.percentile(class_1_probs, 25):.4f}, 50%={np.percentile(class_1_probs, 50):.4f}, 75%={np.percentile(class_1_probs, 75):.4f}, 95%={np.percentile(class_1_probs, 95):.4f}, 99%={np.percentile(class_1_probs, 99):.4f}"
+                        )
+                    else:
+                        print("  No class 1 samples in calibration set")
 
                     print(
                         f"\nExport: Class 0 calibration scores ({len(class_0_probs)} points):"
                     )
-                    print(f"  Min: {class_0_probs.min():.4f}")
-                    print(f"  Max: {class_0_probs.max():.4f}")
-                    print(f"  Mean: {class_0_probs.mean():.4f}")
-                    print(f"  Std: {class_0_probs.std():.4f}")
+                    if len(class_0_probs) > 0:
+                        print(f"  Min: {class_0_probs.min():.4f}")
+                        print(f"  Max: {class_0_probs.max():.4f}")
+                        print(f"  Mean: {class_0_probs.mean():.4f}")
+                        print(f"  Std: {class_0_probs.std():.4f}")
+                    else:
+                        print("  No class 0 samples in calibration set")
 
                     # Create simple ASCII dot plot
-                    print(f"\nExport: Class 1 probability distribution (dot plot):")
-                    print("0.0" + "=" * 50 + "1.0")
-                    for i, prob in enumerate(sorted(class_1_probs)):
-                        pos = int(prob * 50)
-                        marker = (
-                            "●" if i < len(class_1_probs) - 1 else "●"
-                        )  # Use filled circle
-                        print(" " * pos + marker)
-                    print("0.0" + "=" * 50 + "1.0")
+                    if len(class_1_probs) > 0:
+                        print(f"\nExport: Class 1 probability distribution (dot plot):")
+                        print("0.0" + "=" * 50 + "1.0")
+                        for i, prob in enumerate(sorted(class_1_probs)):
+                            pos = int(prob * 50)
+                            marker = (
+                                "●" if i < len(class_1_probs) - 1 else "●"
+                            )  # Use filled circle
+                            print(" " * pos + marker)
+                        print("0.0" + "=" * 50 + "1.0")
 
-                    # Print raw scores as lists for copy-paste verification
-                    print(
-                        f"\nExport: Class 1 scores (sorted): {[float(x) for x in sorted(class_1_probs)]}"
-                    )
-                    print(
-                        f"\nExport: Class 0 scores (sorted): {[float(x) for x in sorted(class_0_probs)]}"
-                    )
+                        # Print raw scores as lists for copy-paste verification
+                        print(
+                            f"\nExport: Class 1 scores (sorted): {[float(x) for x in sorted(class_1_probs)]}"
+                        )
+                    else:
+                        print(
+                            "\nExport: Class 1 probability distribution (dot plot): No class 1 samples"
+                        )
+                        print("\nExport: Class 1 scores (sorted): []")
+                    if len(class_0_probs) > 0:
+                        print(
+                            f"\nExport: Class 0 scores (sorted): {[float(x) for x in sorted(class_0_probs)]}"
+                        )
+                    else:
+                        print("\nExport: Class 0 scores (sorted): []")
 
                     for alpha in error_rates:
                         confidence_level = 1 - alpha
