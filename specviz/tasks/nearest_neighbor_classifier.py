@@ -214,13 +214,13 @@ class NearestNeighborClassifierApp:
                                                                                     className="mb-2",
                                                                                 ),
                                                                                 dbc.Label(
-                                                                                    "Subsample Size:"
+                                                                                    "Subsample Size (Class 1 only):"
                                                                                 ),
                                                                                 dbc.Input(
                                                                                     id="subsample-size-input",
                                                                                     type="number",
                                                                                     min=1,
-                                                                                    placeholder="Leave empty for all points",
+                                                                                    placeholder="Leave empty for all class 1 points",
                                                                                     className="mb-2",
                                                                                 ),
                                                                                 dbc.Button(
@@ -1060,6 +1060,13 @@ class NearestNeighborClassifierApp:
                 calibration_mask = measured_levels == calibration_level
                 calibration_indices = measured_indices[calibration_mask]
                 calibration_levels = measured_levels[calibration_mask]
+                
+                # Get class distribution in calibration set for debugging
+                calibration_class_mask = np.isin(measured_indices, calibration_indices)
+                calibration_class_labels = self.class_labels[calibration_class_mask]
+                unique_cal_classes, cal_class_counts = np.unique(calibration_class_labels, return_counts=True)
+                cal_class_dist = dict(zip(unique_cal_classes, cal_class_counts))
+                print(f"Calibration set class distribution: {cal_class_dist}")
 
                 # Apply subsampling to calibration set if specified
                 if subsample_size and subsample_size > 0:
@@ -1070,14 +1077,36 @@ class NearestNeighborClassifierApp:
                             f" (all {len(calibration_indices)} points used)"
                         )
                     else:
-                        # Random subsampling (calibration set is only one level, so no stratification needed)
-                        selected_calibration_indices = np.random.choice(
-                            calibration_indices, size=subsample_size, replace=False
-                        )
+                        # Get class labels for calibration points
+                        calibration_mask = np.isin(measured_indices, calibration_indices)
+                        calibration_class_labels = self.class_labels[calibration_mask]
+                        
+                        # Stratified sampling: pick points from class 1 only
+                        class_1_mask = calibration_class_labels == 1
+                        class_1_indices = calibration_indices[class_1_mask]
+                        
+                        if len(class_1_indices) >= subsample_size:
+                            # We have enough class 1 points, sample from them
+                            selected_calibration_indices = np.random.choice(
+                                class_1_indices, size=subsample_size, replace=False
+                            )
+                            subsample_note = f" (stratified: {subsample_size} class 1 points from {len(class_1_indices)} available)"
+                        else:
+                            # Not enough class 1 points, use all available class 1 points
+                            selected_calibration_indices = class_1_indices
+                            subsample_note = f" (stratified: all {len(class_1_indices)} class 1 points used, requested {subsample_size})"
+                        
                         remaining_calibration_indices = np.setdiff1d(
                             calibration_indices, selected_calibration_indices
                         )
-                        subsample_note = f" (subsampled from {len(calibration_indices)} to {len(selected_calibration_indices)} points, {len(remaining_calibration_indices)} points added to training)"
+                        subsample_note += f", {len(remaining_calibration_indices)} points added to training"
+                        
+                        # Debug: Show final class distribution after subsampling
+                        selected_cal_class_mask = np.isin(measured_indices, selected_calibration_indices)
+                        selected_cal_class_labels = self.class_labels[selected_cal_class_mask]
+                        unique_selected_classes, selected_class_counts = np.unique(selected_cal_class_labels, return_counts=True)
+                        selected_class_dist = dict(zip(unique_selected_classes, selected_class_counts))
+                        print(f"Selected calibration set class distribution: {selected_class_dist}")
                 else:
                     selected_calibration_indices = calibration_indices
                     remaining_calibration_indices = np.array([])
@@ -1139,6 +1168,13 @@ class NearestNeighborClassifierApp:
                         unique_calibration_levels == level
                     ][0]
                     calibration_items.append(f"Level {level}: {count} points")
+                
+                # Get class distribution in selected calibration set
+                selected_cal_class_mask = np.isin(measured_indices, selected_calibration_indices)
+                selected_cal_class_labels = self.class_labels[selected_cal_class_mask]
+                unique_selected_classes, selected_class_counts = np.unique(selected_cal_class_labels, return_counts=True)
+                selected_class_dist = dict(zip(unique_selected_classes, selected_class_counts))
+                class_items = [f"Class {c}: {n}" for c, n in selected_class_dist.items()]
 
                 summary = html.Div(
                     [
@@ -1155,6 +1191,11 @@ class NearestNeighborClassifierApp:
                         html.Br(),
                         html.Small(
                             "Calibration: " + ", ".join(calibration_items),
+                            className="text-info",
+                        ),
+                        html.Br(),
+                        html.Small(
+                            "Calibration classes: " + ", ".join(class_items),
                             className="text-info",
                         ),
                     ]
@@ -1484,16 +1525,19 @@ class NearestNeighborClassifierApp:
                         training_results, current_metric or "accuracy"
                     )
 
-                    # Get K and sigma combinations for dropdown
-                    result_keys = sorted(list(training_results.keys()))
+                    # Get K and sigma combinations for dropdown, sorted by Brier score
+                    # Create list of (key, result) tuples with Brier scores for sorting
+                    result_items = [(key, result) for key, result in training_results.items()]
+                    
+                    # Sort by Brier score (lower is better)
+                    result_items.sort(key=lambda x: x[1]["brier_score"])
+                    
                     k_options = [
                         {
-                            "label": f'K={result["k"]}, σ={result["sigma"]:.2f}, p={result["p"]}',
+                            "label": f'K={result["k"]}, σ={result["sigma"]:.2f}, p={result["p"]} (Brier: {result["brier_score"]:.4f}, Acc: {result["calibration_accuracy"]:.3f})',
                             "value": key,
                         }
-                        for key, result in [
-                            (k, training_results[k]) for k in result_keys
-                        ]
+                        for key, result in result_items
                     ]
 
                     # Clean up
