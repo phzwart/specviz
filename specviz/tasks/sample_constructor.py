@@ -6,8 +6,8 @@ import duckdb
 import numpy as np
 import pandas as pd
 import redis
-from consir.sampling.topdown.poissontiler import PoissonTiler
-from consir.workflow.dbtools import store_df_in_db, store_dict_in_db
+from hiposa.poisson_tiler import PoissonTiler
+from tools.dbtools import store_df_in_db, store_dict_in_db
 
 from specviz.tasks.redis_logger import RedisLogger
 

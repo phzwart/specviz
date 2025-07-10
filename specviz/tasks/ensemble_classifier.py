@@ -20,7 +20,7 @@ from dash.exceptions import PreventUpdate
 from numpy.typing import NDArray
 
 from specviz.tasks.conformal_prediction import OneClassConformalPredictor
-from specviz.tasks.dbtools import (
+from tools.dbtools import (
     append_df_to_table,
     check_table_exists,
     fetch_dict_from_db,

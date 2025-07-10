@@ -1,6 +1,8 @@
 import multiprocessing
 import os
 import tempfile
+import argparse
+import sys
 from multiprocessing import Pipe, Process
 from time import sleep
 
@@ -10,7 +12,7 @@ import duckdb
 import numpy as np
 import pandas as pd
 import redis
-from consir.workflow.dbtools import (
+from tools.dbtools import (
     add_column_to_table,
     append_df_to_table,
     check_table_exists,
@@ -1079,5 +1081,10 @@ class ConfigureUMAP:
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Configure UMAP Application")
+    parser.add_argument("--port", type=int, default=8056, help="Port to run the server on")
+    parser.add_argument("--debug", action="store_true", help="Run in debug mode")
+    args = parser.parse_args()
+    
     app = ConfigureUMAP()
-    app.run()
+    app.run(debug=args.debug, port=args.port)

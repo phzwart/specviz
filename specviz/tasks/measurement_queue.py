@@ -42,7 +42,7 @@ class MeasurementQueue:
             print(f"Error adding measurement to queue: {str(e)}")
             return False
 
-    def get_measurement(self, timeout: int = 0) -> Optional[dict]:
+    def get_measurement(self, timeout: Union[int, float] = 0) -> Optional[dict]:
         """Get next measurement from queue
 
         Args:
@@ -52,8 +52,11 @@ class MeasurementQueue:
             Optional[Dict]: Measurement dictionary or None if queue is empty
         """
         try:
+            # Convert timeout to integer for Redis compatibility
+            timeout_int = int(timeout) if timeout is not None else None
+            
             # Use BRPOP for blocking operation with timeout
-            result = self.redis_client.brpop(self.queue_key, timeout=timeout)
+            result = self.redis_client.brpop(self.queue_key, timeout=timeout_int)
             if result is None:
                 return None
 

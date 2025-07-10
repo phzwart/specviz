@@ -2,7 +2,7 @@ import duckdb
 import numpy as np
 import pandas as pd
 import redis
-from consir.workflow.dbtools import check_table_exists, read_df_from_db, store_df_in_db
+from tools.dbtools import check_table_exists, read_df_from_db, store_df_in_db
 from scipy.spatial.distance import cdist
 
 

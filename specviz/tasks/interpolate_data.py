@@ -26,7 +26,7 @@ from dash.dependencies import Input, Output, State
 from dash.exceptions import PreventUpdate
 from dask.distributed import Client, LocalCluster
 
-from specviz.tasks.dbtools import check_table_exists, read_df_from_db
+from tools.dbtools import check_table_exists, read_df_from_db
 from specviz.tasks.interpolation_worker import InterpolationWorker, run_worker
 from specviz.tasks.interpolators import INTERPOLATORS
 

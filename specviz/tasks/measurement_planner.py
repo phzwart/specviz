@@ -14,7 +14,7 @@ import redis
 from dash import dcc, html
 from dash.dependencies import Input, Output, State
 
-from specviz.tasks.dbtools import (
+from tools.dbtools import (
     add_column_to_table,
     append_df_to_table,
     check_table_exists,

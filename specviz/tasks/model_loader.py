@@ -4,7 +4,7 @@ import threading
 from queue import Queue
 
 import duckdb
-from consir.workflow.dbtools import (
+from tools.dbtools import (
     check_table_exists,
     fetch_dict_from_db,
     read_df_from_db,

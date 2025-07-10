@@ -17,6 +17,28 @@ viz of spectra
 
 </div>
 
+## About
+
+SpecViz is a comprehensive spectral visualization and analysis toolkit designed for hyperspectral data processing, machine learning, and interactive exploration. It provides a suite of tools for:
+
+- **Spectral Data Processing**: Load, normalize, and preprocess hyperspectral data
+- **Dimensionality Reduction**: UMAP-based visualization and exploration
+- **Machine Learning**: Ensemble classifiers, nearest neighbor methods, and conformal prediction
+- **Interactive Visualization**: Web-based dashboards for data exploration
+- **Database Management**: Efficient storage and retrieval using DuckDB and Redis
+- **Parallel Computing**: Distributed processing with Dask
+
+## Key Features
+
+- **Interactive Web Interfaces**: Built with Dash and Plotly for real-time data exploration
+- **Machine Learning Pipeline**: Support for various classifiers including RFF, KNN, and ensemble methods
+- **Spatial Analysis**: Tools for spatial latent space exploration and trajectory analysis
+- **Data Interpolation**: Multiple interpolation methods for spatial data processing
+- **Conformal Prediction**: Uncertainty quantification for machine learning predictions
+- **Parallel Processing**: Efficient handling of large datasets with Dask
+- **Database Integration**: Seamless integration with DuckDB and Redis for data persistence
+- **Tools Package**: Local utilities for database operations and other helper functions
+
 ## Very first steps
 
 ### Initialize your code
@@ -140,27 +162,88 @@ Articles:
 
 ## Installation
 
+### Prerequisites
+
+This project requires Python 3.9 or higher and several system dependencies:
+
+- **Redis**: For data storage and communication between components
+- **DuckDB**: For local database operations (included as Python package)
+- **Hiposa**: For sampling and workflow tools (PoissonTiler, etc.)
+
+### Install from Source
+
+1. Clone the repository:
 ```bash
-pip install -U specviz
+git clone https://github.com/specviz/specviz.git
+cd specviz
 ```
 
-or install with `Poetry`
-
+2. Install dependencies using Poetry (recommended):
 ```bash
-poetry add specviz
+# Install Poetry if you don't have it
+curl -sSL https://install.python-poetry.org | python3 -
+
+# Install dependencies
+poetry install
 ```
 
-Then you can run
+3. Or install using pip:
+```bash
+pip install -r requirements.txt
+```
+
+### Development Installation
+
+For development, install with all development dependencies:
 
 ```bash
+# Using Poetry
+poetry install --with dev
+
+# Using pip
+pip install -r requirements.txt
+pip install -e .
+```
+
+### Running the Application
+
+After installation, you can run:
+
+```bash
+# Using Poetry
+poetry run specviz --help
+
+# Using pip
 specviz --help
 ```
 
-or with `Poetry`:
+### System Dependencies
+
+Make sure you have Redis running:
 
 ```bash
-poetry run specviz --help
+# On Ubuntu/Debian
+sudo apt-get install redis-server
+sudo systemctl start redis-server
+
+# On macOS with Homebrew
+brew install redis
+brew services start redis
+
+# On Windows
+# Download and install Redis from https://redis.io/download
 ```
+
+### Verifying Installation
+
+After installation, you can verify that everything is working correctly:
+
+```bash
+# Run the installation test
+python test_installation.py
+```
+
+This script will check that all required dependencies can be imported and that the SpecViz package is properly installed.
 
 ### Makefile usage
 

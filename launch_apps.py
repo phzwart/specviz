@@ -25,12 +25,12 @@ def open_browser_tabs(ports):
 def main():
     # Default ports for each app
     ports = {
-        "setup_session": 8051,
-        "measurement_planner": 8053,
-        "acquire_data": 8055,
-        "configure_umap": 8056,
-        "explore_embedding": 8057,
-        "ensemble_classifier": 8058,
+        "setup_session": 8071,
+        "measurement_planner": 8072,
+        "acquire_data": 8073,
+        "configure_umap": 8074,
+        "explore_embedding": 8075,
+        "nearest_neighbor_classifier": 8076,
     }
 
     # Parse command line arguments
@@ -68,8 +68,8 @@ def main():
     parser.add_argument(
         "--classifier-port",
         type=int,
-        default=ports["ensemble_classifier"],
-        help="Port for Ensemble Classifier app",
+        default=ports["nearest_neighbor_classifier"],
+        help="Port for Nearest Neighbor Classifier app",
     )
     parser.add_argument(
         "--no-browser",
@@ -85,7 +85,7 @@ def main():
     ports["acquire_data"] = args.acquire_port
     ports["configure_umap"] = args.umap_port
     ports["explore_embedding"] = args.explorer_port
-    ports["ensemble_classifier"] = args.classifier_port
+    ports["nearest_neighbor_classifier"] = args.classifier_port
 
     # Launch each app in a separate process
     for app_name, port in ports.items():

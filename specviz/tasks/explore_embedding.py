@@ -8,7 +8,7 @@ from dash import dcc, html
 from dash.dependencies import Input, Output, State
 from dash.exceptions import PreventUpdate
 
-from specviz.tasks.dbtools import check_table_exists, read_df_from_db, store_df_in_db
+from tools.dbtools import check_table_exists, read_df_from_db, store_df_in_db
 from specviz.tasks.spatial_latent_space_explorer import SpatialLatentSpaceExplorer
 
 
