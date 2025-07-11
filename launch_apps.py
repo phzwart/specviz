@@ -23,53 +23,74 @@ def open_browser_tabs(ports):
 
 
 def main():
-    # Default ports for each app
-    ports = {
+    # Available apps and their default ports
+    available_apps = {
         "setup_session": 8071,
         "measurement_planner": 8072,
         "acquire_data": 8073,
-        "configure_umap": 8074,
-        "explore_embedding": 8075,
-        "nearest_neighbor_classifier": 8076,
+        "baseline_correction": 8074,
+        "configure_umap": 8075,
+        "explore_embedding": 8076,
+        "nearest_neighbor_classifier": 8077,
+        "interpolate_data": 8078,
     }
 
     # Parse command line arguments
     parser = argparse.ArgumentParser(description="Launch SpecViz applications")
     parser.add_argument(
+        "apps",
+        nargs="*",
+        choices=list(available_apps.keys()) + ["all"],
+        default=["all"],
+        help="Apps to launch (default: all). Use 'all' to launch all apps.",
+    )
+    parser.add_argument(
         "--setup-port",
         type=int,
-        default=ports["setup_session"],
+        default=available_apps["setup_session"],
         help="Port for Setup Session app",
     )
     parser.add_argument(
         "--planner-port",
         type=int,
-        default=ports["measurement_planner"],
+        default=available_apps["measurement_planner"],
         help="Port for Measurement Planner app",
     )
     parser.add_argument(
         "--acquire-port",
         type=int,
-        default=ports["acquire_data"],
+        default=available_apps["acquire_data"],
         help="Port for Data Acquisition app",
+    )
+    parser.add_argument(
+        "--baseline-port",
+        type=int,
+        default=available_apps["baseline_correction"],
+        help="Port for Baseline Correction app",
     )
     parser.add_argument(
         "--umap-port",
         type=int,
-        default=ports["configure_umap"],
+        default=available_apps["configure_umap"],
         help="Port for UMAP Configuration app",
     )
     parser.add_argument(
         "--explorer-port",
         type=int,
-        default=ports["explore_embedding"],
+        default=available_apps["explore_embedding"],
         help="Port for Embedding Explorer app",
     )
     parser.add_argument(
         "--classifier-port",
         type=int,
-        default=ports["nearest_neighbor_classifier"],
+        default=available_apps["nearest_neighbor_classifier"],
         help="Port for Nearest Neighbor Classifier app",
+    )
+    parser.add_argument(
+        "--interpolator-port",
+        type=int,
+        default=available_apps["interpolate_data"],
+        help="Port for Interpolate Data app",
     )
     parser.add_argument(
         "--no-browser",
@@ -79,15 +100,33 @@ def main():
 
     args = parser.parse_args()
 
-    # Update ports from arguments
-    ports["setup_session"] = args.setup_port
-    ports["measurement_planner"] = args.planner_port
-    ports["acquire_data"] = args.acquire_port
-    ports["configure_umap"] = args.umap_port
-    ports["explore_embedding"] = args.explorer_port
-    ports["nearest_neighbor_classifier"] = args.classifier_port
+    # Determine which apps to launch
+    if "all" in args.apps:
+        apps_to_launch = list(available_apps.keys())
+    else:
+        apps_to_launch = args.apps
 
-    # Launch each app in a separate process
+    # Create ports dictionary for selected apps
+    ports = {}
+    for app_name in apps_to_launch:
+        if app_name == "setup_session":
+            ports[app_name] = args.setup_port
+        elif app_name == "measurement_planner":
+            ports[app_name] = args.planner_port
+        elif app_name == "acquire_data":
+            ports[app_name] = args.acquire_port
+        elif app_name == "baseline_correction":
+            ports[app_name] = args.baseline_port
+        elif app_name == "configure_umap":
+            ports[app_name] = args.umap_port
+        elif app_name == "explore_embedding":
+            ports[app_name] = args.explorer_port
+        elif app_name == "nearest_neighbor_classifier":
+            ports[app_name] = args.classifier_port
+        elif app_name == "interpolate_data":
+            ports[app_name] = args.interpolator_port
+
+    # Launch selected apps in separate processes
     for app_name, port in ports.items():
         print(f"Starting {app_name} on port {port}...")
         run_app(app_name, port)

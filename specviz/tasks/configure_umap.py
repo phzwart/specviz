@@ -1163,9 +1163,9 @@ class ConfigureUMAP:
                     # Connect to database
                     conn = duckdb.connect(db_path)
 
-                    # Get HCD indices from the current data source table
-                    spectral_data = read_df_from_db(conn, data_source)
-                    hcd_indices = spectral_data["hcd_indx"].values
+                    # Get HCD indices from measured_data table (which always has hcd_indx)
+                    measured_data = read_df_from_db(conn, "measured_data")
+                    hcd_indices = measured_data["hcd_indx"].values
 
                     # Create DataFrame with hcd_indx, UMAP coordinates, and selection column
                     embedding_df = pd.DataFrame(
