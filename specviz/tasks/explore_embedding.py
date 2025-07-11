@@ -110,6 +110,31 @@ class ExploreEmbedding:
                                         )
                                     ]
                                 ),
+                                # Data Source Selection
+                                dbc.Row(
+                                    [
+                                        dbc.Col(
+                                            [
+                                                html.Label("Spectral Data Source:"),
+                                                dcc.Dropdown(
+                                                    id="data-source",
+                                                    options=[
+                                                        {"label": "Original Data (measured_data)", "value": "measured_data"},
+                                                        {"label": "Baseline Corrected Data (baseline_corrected_data)", "value": "baseline_corrected_data"},
+                                                        {"label": "Baseline Data (baseline_data)", "value": "baseline_data"},
+                                                    ],
+                                                    value="measured_data",
+                                                    className="mb-2",
+                                                ),
+                                                html.Small(
+                                                    "Select which spectral data to use for analysis",
+                                                    className="text-muted",
+                                                ),
+                                            ]
+                                        )
+                                    ],
+                                    className="mb-3",
+                                ),
                                 # Selection Mode
                                 dbc.Row(
                                     [
@@ -472,11 +497,12 @@ class ExploreEmbedding:
                 Output("data-loaded-store", "data"),
             ],  # Add output for data loaded store
             [Input("load-data-button", "n_clicks")],
+            [State("data-source", "value")],
             prevent_initial_call=True,
         )
-        def handle_load_data(n_clicks):
+        def handle_load_data(n_clicks, data_source):
             if n_clicks:
-                status, color = self.load_data()
+                status, color = self.load_data(data_source)
                 return status, f"text-{color}", True
             return dash.no_update, dash.no_update, dash.no_update
 
@@ -936,7 +962,7 @@ class ExploreEmbedding:
             self.redis_status = f"Connection Error: {str(e)}"
             self.redis_status_color = "danger"
 
-    def load_data(self):
+    def load_data(self, data_source="measured_data"):
         """Load data into memory with proper alignment"""
         try:
             db_path = self.redis_client.get("current_project")
@@ -948,24 +974,28 @@ class ExploreEmbedding:
             # Check all required tables exist
             required_tables = [
                 "HCD",
-                "measured_data",
                 "wavenumbers",
                 "embedding",
                 "level_scale",
             ]
+            
+            # Add the selected data source to required tables
+            if data_source not in required_tables:
+                required_tables.append(data_source)
+            
             for table in required_tables:
                 if not check_table_exists(conn, table):
                     return f"Required table '{table}' not found in {db_path}", "danger"
 
             # Load all required tables using dbtools
             hcd_df = read_df_from_db(conn, "HCD")
-            measured_data_df = read_df_from_db(conn, "measured_data")
+            spectral_data_df = read_df_from_db(conn, data_source)
             wavenumbers = read_df_from_db(conn, "wavenumbers")["wavenumber"].values
             embedding_df = read_df_from_db(conn, "embedding")
             level_scale_df = read_df_from_db(conn, "level_scale")
 
-            # Get HCD indices from measured data
-            measured_indices = measured_data_df["hcd_indx"].values
+            # Get HCD indices from spectral data
+            measured_indices = spectral_data_df["hcd_indx"].values
 
             # Get the maximum level for these points from HCD
             max_level = hcd_df.loc[measured_indices, "level"].max()
@@ -987,7 +1017,7 @@ class ExploreEmbedding:
             )
 
             # Extract spectral data (excluding hcd_indx column)
-            spectra = measured_data_df.iloc[:, 1:].values  # Skip hcd_indx column
+            spectra = spectral_data_df.iloc[:, 1:].values  # Skip hcd_indx column
 
             # Get corresponding X, Y coordinates from HCD for our indices
             spatial_coords = hcd_df.loc[measured_indices, ["X", "Y"]]
@@ -1002,6 +1032,7 @@ class ExploreEmbedding:
             print(
                 f"Calculated scales - Spatial: {self.default_spatial_scale}, Latent: {self.default_latent_scale}"
             )
+            print(f"Data source: {data_source}")
 
             # Store aligned data
             self.measured_indices = measured_indices
@@ -1026,7 +1057,7 @@ class ExploreEmbedding:
                             store.data = True
 
             status = (
-                f"Successfully loaded data:\n"
+                f"Successfully loaded data from {data_source}:\n"
                 f"- Number of points: {len(measured_indices)}\n"
                 f"- Spectra shape: {spectra.shape}\n"
                 f"- Wavenumber range: {wavenumbers.min():.1f} - {wavenumbers.max():.1f}\n"

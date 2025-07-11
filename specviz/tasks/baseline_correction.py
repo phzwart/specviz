@@ -591,6 +591,10 @@ def baseline_correction_runner(
         r.set(corrected_key, corrected_data.tobytes())
         r.set(baseline_key, baseline_data.tobytes())
         
+        # Also store baseline data in Redis for immediate access
+        baseline_key_data = f"temp:baseline:{pid}:baseline_data"
+        r.set(baseline_key_data, baseline_data.tobytes())
+        
         # Check if we had failures and set appropriate status
         max_consecutive_failures = 5  # Define this here
         if consecutive_failures >= max_consecutive_failures:
@@ -1514,13 +1518,11 @@ class BaselineCorrectionApp:
 
             try:
                 corrected_data = self.redis_client.get(f"temp:baseline:{os.getpid()}:corrected")
+                baseline_data = self.redis_client.get(f"temp:baseline:{os.getpid()}:baseline")
                 
-                if corrected_data:
+                if corrected_data and baseline_data:
                     corrected_array = np.frombuffer(corrected_data).reshape(self.data.shape)
-                    
-                    # Create DataFrame with corrected data
-                    df = pd.DataFrame(corrected_array, columns=self.wavenumbers)
-                    df.index.name = "spectrum_id"
+                    baseline_array = np.frombuffer(baseline_data).reshape(self.data.shape)
                     
                     # Get database path from Redis
                     db_path = self.redis_client.get("current_project")
@@ -1529,15 +1531,26 @@ class BaselineCorrectionApp:
                     
                     db_path = db_path.decode() if isinstance(db_path, bytes) else str(db_path)
                     
-                    # Connect to database and store
+                    # Connect to database and store both tables
                     conn = duckdb.connect(db_path)
-                    table_name = "baseline_corrected_data"
-                    store_df_in_db(conn, df, table_name)
+                    
+                    # Create DataFrame with corrected data
+                    corrected_df = pd.DataFrame(corrected_array, columns=self.wavenumbers)
+                    corrected_df.index.name = "spectrum_id"
+                    
+                    # Create DataFrame with baseline data
+                    baseline_df = pd.DataFrame(baseline_array, columns=self.wavenumbers)
+                    baseline_df.index.name = "spectrum_id"
+                    
+                    # Store both tables
+                    store_df_in_db(conn, corrected_df, "baseline_corrected_data")
+                    store_df_in_db(conn, baseline_df, "baseline_data")
+                    
                     conn.close()
                     
-                    return f"Corrected data exported to table: {table_name}"
+                    return f"Exported to tables: baseline_corrected_data, baseline_data"
                 else:
-                    return "No corrected data available for export"
+                    return "No corrected/baseline data available for export"
                     
             except Exception as e:
                 return f"Error exporting data: {str(e)}"
