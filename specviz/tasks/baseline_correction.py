@@ -60,9 +60,9 @@ def apply_baseline_correction(data, wavenumbers, method, **kwargs):
                 "func": baseline_fitter.rubberband,
                 "params": ["segments", "lam", "diff_order", "smooth_half_window"]
             },
-            "pspline_asls": {
-                "func": baseline_fitter.pspline_asls,
-                "params": ["lam", "p", "num_knots", "spline_degree", "diff_order", "max_iter", "tol"]
+            "pspline_arpls": {
+                "func": baseline_fitter.pspline_arpls,
+                "params": ["lam", "num_knots", "spline_degree", "diff_order", "max_iter", "tol"]
             },
         }
     
@@ -122,10 +122,23 @@ def apply_baseline_correction(data, wavenumbers, method, **kwargs):
                 method_kwargs = {k: v for k, v in cleaned_kwargs.items() if k in accepted_params}
                 
                 # Additional safety check: remove any dictionary values and None values
+                # Also convert parameters to appropriate types
                 final_kwargs = {}
                 for k, v in method_kwargs.items():
                     if v is not None and not isinstance(v, dict):
-                        final_kwargs[k] = v
+                        # Convert to appropriate type based on parameter
+                        if k in ["poly_order", "max_iter", "num_knots", "spline_degree", "half_window", "segments", "diff_order", "smooth_half_window"]:
+                            # These should be integers
+                            try:
+                                final_kwargs[k] = int(float(v))
+                            except (ValueError, TypeError):
+                                print(f"Warning: Skipping non-numeric parameter {k}={v}")
+                        else:
+                            # These should be floats
+                            try:
+                                final_kwargs[k] = float(v)
+                            except (ValueError, TypeError):
+                                print(f"Warning: Skipping non-numeric parameter {k}={v}")
                 
                 # Call the function with filtered parameters
                 try:
@@ -403,7 +416,7 @@ def baseline_correction_runner(
             "imodpoly": ["poly_order", "tol", "max_iter", "use_original", "mask_initial_peaks", "num_std"],
             "quantile": ["poly_order", "quantile", "tol", "max_iter", "eps"],
             "rubberband": ["segments", "lam", "diff_order", "smooth_half_window"],
-            "pspline_asls": ["lam", "p", "num_knots", "spline_degree", "diff_order", "max_iter", "tol"],
+            "pspline_arpls": ["lam", "num_knots", "spline_degree", "diff_order", "max_iter", "tol"],
         }
         
         if baseline_method in method_configs:
@@ -454,7 +467,7 @@ def baseline_correction_runner(
         for k, v in baseline_params.items():
             try:
                 # Convert to appropriate type based on parameter
-                if k in ["poly_order", "max_iter", "num_knots", "spline_degree", "half_window"]:
+                if k in ["poly_order", "max_iter", "num_knots", "spline_degree", "half_window", "segments", "diff_order", "smooth_half_window"]:
                     # These should be integers
                     int_val = int(float(v))
                     safe_baseline_params[k] = int_val
@@ -675,7 +688,7 @@ class BaselineCorrectionApp:
                                                                         {"label": "Iterative Modified Polynomial", "value": "imodpoly"},
                                                                         {"label": "Quantile", "value": "quantile"},
                                                                         {"label": "Rubberband", "value": "rubberband"},
-                                                                        {"label": "PSpline ASLS", "value": "pspline_asls"},
+                                                                        {"label": "PSpline ARPLS", "value": "pspline_arpls"},
                                                                     ],
                                                                     value="imodpoly",
                                                                     className="mb-3",
@@ -969,7 +982,7 @@ class BaselineCorrectionApp:
                                                     style={"display": "none"},
                                                 ),
                                                 
-                                                # PSpline ASLS parameters
+                                                # PSpline ARPLS parameters
                                                 html.Div(
                                                     id="pspline-params",
                                                     children=[
@@ -986,22 +999,7 @@ class BaselineCorrectionApp:
                                                                             className="form-control",
                                                                         ),
                                                                     ],
-                                                                    width=3,
-                                                                ),
-                                                                dbc.Col(
-                                                                    [
-                                                                        html.Label("P:"),
-                                                                        dcc.Input(
-                                                                            id="pspline-p",
-                                                                            type="number",
-                                                                            value=0.01,
-                                                                            min=0.001,
-                                                                            max=1.0,
-                                                                            step=0.001,
-                                                                            className="form-control",
-                                                                        ),
-                                                                    ],
-                                                                    width=3,
+                                                                    width=4,
                                                                 ),
                                                                 dbc.Col(
                                                                     [
@@ -1015,7 +1013,7 @@ class BaselineCorrectionApp:
                                                                             className="form-control",
                                                                         ),
                                                                     ],
-                                                                    width=3,
+                                                                    width=4,
                                                                 ),
                                                                 dbc.Col(
                                                                     [
@@ -1029,7 +1027,7 @@ class BaselineCorrectionApp:
                                                                             className="form-control",
                                                                         ),
                                                                     ],
-                                                                    width=3,
+                                                                    width=4,
                                                                 ),
                                                             ],
                                                             className="mb-3",
@@ -1081,16 +1079,42 @@ class BaselineCorrectionApp:
                                                                 ),
                                                                 dbc.Col(
                                                                     [
-                                                                        html.Label("Knot Positions:"),
-                                                                        dcc.Textarea(
-                                                                            id="knot-positions",
-                                                                            placeholder="Enter knot positions as comma-separated values (e.g., 0, 0.25, 0.5, 0.75, 1.0)",
-                                                                            value="",
-                                                                            rows=3,
+                                                                        html.Label("Predefined Knot Sets:"),
+                                                                        dcc.Dropdown(
+                                                                            id="knot-presets",
+                                                                            options=[
+                                                                                {"label": "Custom", "value": "custom"},
+                                                                                {"label": "Uniform (5 knots)", "value": "uniform_5"},
+                                                                                {"label": "Uniform (10 knots)", "value": "uniform_10"},
+                                                                                {"label": "Uniform (20 knots)", "value": "uniform_20"},
+                                                                                {"label": "Dense (50 knots)", "value": "dense_50"},
+                                                                                {"label": "Sparse (3 knots)", "value": "sparse_3"},
+                                                                                {"label": "Logarithmic (10 knots)", "value": "log_10"},
+                                                                            ],
+                                                                            value="uniform_10",
                                                                             className="form-control",
                                                                         ),
                                                                     ],
                                                                     width=3,
+                                                                ),
+                                                            ],
+                                                            className="mb-3",
+                                                        ),
+                                                        dbc.Row(
+                                                            [
+                                                                dbc.Col(
+                                                                    [
+                                                                        html.Label("Custom Knot Positions:"),
+                                                                        dcc.Textarea(
+                                                                            id="knot-positions",
+                                                                            placeholder="Enter custom knot positions as comma-separated values (e.g., 0, 0.25, 0.5, 0.75, 1.0)",
+                                                                            value="",
+                                                                            rows=3,
+                                                                            className="form-control",
+                                                                        ),
+                                                                        html.Small("Leave empty to use predefined set", className="text-muted"),
+                                                                    ],
+                                                                    width=12,
                                                                 ),
                                                             ],
                                                             className="mb-3",
@@ -1248,12 +1272,12 @@ class BaselineCorrectionApp:
                 State("smooth-half-window", "value"),
                 # PSpline parameters
                 State("pspline-lam", "value"),
-                State("pspline-p", "value"),
                 State("num-knots", "value"),
                 State("spline-degree", "value"),
                 State("pspline-diff-order", "value"),
                 State("pspline-max-iter", "value"),
                 State("pspline-tol", "value"),
+                State("knot-presets", "value"),
                 State("knot-positions", "value"),
             ],
             prevent_initial_call=True,
@@ -1284,12 +1308,12 @@ class BaselineCorrectionApp:
             smooth_half_window,
             # PSpline parameters
             pspline_lam,
-            pspline_p,
             num_knots,
             spline_degree,
             pspline_diff_order,
             pspline_max_iter,
             pspline_tol,
+            knot_presets,
             knot_positions,
         ):
             ctx = dash.callback_context
@@ -1334,23 +1358,40 @@ class BaselineCorrectionApp:
                             "diff_order": diff_order,
                             "smooth_half_window": smooth_half_window,
                         })
-                    elif baseline_method == "pspline_asls":
+                    elif baseline_method == "pspline_arpls":
                         params.update({
                             "lam": pspline_lam,
-                            "p": pspline_p,
                             "num_knots": num_knots,
                             "spline_degree": spline_degree,
                             "diff_order": pspline_diff_order,
                             "max_iter": pspline_max_iter,
                             "tol": pspline_tol,
                         })
-                        # Handle knot positions if provided
+                        
+                        # Handle knot positions
                         if knot_positions and knot_positions.strip():
+                            # Use custom knot positions
                             try:
                                 knot_pos_list = [float(x.strip()) for x in knot_positions.split(",")]
                                 params["knot_positions"] = knot_pos_list
                             except ValueError:
                                 print(f"Warning: Invalid knot positions format: {knot_positions}")
+                        else:
+                            # Use predefined knot sets
+                            knot_presets_map = {
+                                "uniform_5": [0.0, 0.25, 0.5, 0.75, 1.0],
+                                "uniform_10": [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
+                                "uniform_20": [i/20.0 for i in range(21)],
+                                "dense_50": [i/50.0 for i in range(51)],
+                                "sparse_3": [0.0, 0.5, 1.0],
+                                "log_10": [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
+                            }
+                            
+                            if knot_presets in knot_presets_map:
+                                params["knot_positions"] = knot_presets_map[knot_presets]
+                                print(f"Using predefined knot set: {knot_presets}")
+                            else:
+                                print(f"Warning: Unknown knot preset: {knot_presets}")
                     
                     # Filter out None values and other problematic values
                     filtered_params = {}
@@ -1501,7 +1542,7 @@ class BaselineCorrectionApp:
             imodpoly_style = {"display": "block"} if baseline_method == "imodpoly" else {"display": "none"}
             quantile_style = {"display": "block"} if baseline_method == "quantile" else {"display": "none"}
             rubberband_style = {"display": "block"} if baseline_method == "rubberband" else {"display": "none"}
-            pspline_style = {"display": "block"} if baseline_method == "pspline_asls" else {"display": "none"}
+            pspline_style = {"display": "block"} if baseline_method == "pspline_arpls" else {"display": "none"}
             
             return imodpoly_style, quantile_style, rubberband_style, pspline_style
 
