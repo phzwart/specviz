@@ -82,8 +82,9 @@ def run_interpolation_process(
         print(f"YI shape: {YI.shape}")
         sys.stdout.flush()
 
-        # Prepare output array
-        output = np.zeros((len(yi), len(xi), values.shape[1]))
+        # Prepare output array - note: meshgrid returns (y_points, x_points) shape
+        # We need to store as (channels, y_points, x_points) to match numpy_instrument format
+        output = np.zeros((values.shape[1], len(yi), len(xi)))
 
         # Interpolate each channel
         print("\nInterpolating channels...")
@@ -139,7 +140,7 @@ def run_interpolation_process(
                     print(f"NaN count: {np.isnan(result).sum()}")
                     sys.stdout.flush()
 
-                output[:, :, i] = result
+                output[i, :, :] = result
 
             except Exception as e:
                 print(f"Error interpolating channel {i}: {str(e)}")
@@ -161,19 +162,19 @@ def run_interpolation_process(
         )
 
         metadata = {
-            "shape": output.shape,
+            "shape": output.shape,  # Now (channels, y_points, x_points)
             "wavenumbers": wavenumbers,
             "grid": {"xi": xi.tolist(), "yi": yi.tolist()},
         }
         metadata_client.hset(f"interpolation:{name}", "metadata", json.dumps(metadata))
 
         # Store channels as binary data
-        total_channels = output.shape[2]
+        total_channels = output.shape[0]  # First dimension is now channels
         for i in range(total_channels):
             if i % 100 == 0:
                 print(f"Storing channel {i}/{total_channels}")
                 sys.stdout.flush()
-            channel_data = output[:, :, i].tobytes()
+            channel_data = output[i, :, :].tobytes()  # Get channel i
             redis_client.hset(
                 f"interpolation:{name}", f"channel:{i}".encode(), channel_data
             )
@@ -525,8 +526,11 @@ class InterpolateData:
                         )
                     ]
                 ),
+                # Stores
+                dcc.Store(id="computation-status", data="idle"),
                 # Update intervals
                 dcc.Interval(id="status-check", interval=1000),
+                dcc.Interval(id="computation-check", interval=500),
             ],
             fluid=True,
         )
@@ -548,10 +552,7 @@ class InterpolateData:
 
     def _setup_callbacks(self):
         """Set up the Dash callbacks"""
-        print("\nSetting up callbacks...")
 
-        # Redis status callback
-        print("Setting up redis status callback")
 
         @self.app.callback(
             [Output("redis-status", "children"), Output("redis-status", "className")],
@@ -562,7 +563,6 @@ class InterpolateData:
             prevent_initial_call=True,
         )
         def update_redis_status(n_intervals, n_clicks):
-            print("Redis status callback triggered")
             try:
                 if self.redis_client.ping():
                     # Get current project
@@ -606,7 +606,6 @@ class InterpolateData:
             )
 
         # Load data callback
-        print("Setting up load data callback")
 
         @self.app.callback(
             Output("load-data-status", "children"),
@@ -615,7 +614,6 @@ class InterpolateData:
             prevent_initial_call=True,
         )
         def handle_load_data(n_clicks):
-            print("Load data callback triggered")
             if not n_clicks:
                 return "", ""
 
@@ -623,18 +621,17 @@ class InterpolateData:
             return message, f"text-{status}"
 
         # Data summary callback
-        print("Setting up data summary callback")
 
         @self.app.callback(
             Output("data-summary", "children"),
             [
                 Input("load-data-button", "n_clicks"),
                 Input("status-check", "n_intervals"),
+                Input("computation-status", "data"),
             ],
             prevent_initial_call=True,
         )
-        def update_data_summary(n_clicks, n_intervals):
-            print("Data summary callback triggered")
+        def update_data_summary(n_clicks, n_intervals, computation_status):
             if not hasattr(self, "wavenumber_df") or self.wavenumber_df is None:
                 return "No data loaded"
 
@@ -692,7 +689,6 @@ class InterpolateData:
                 return f"Error updating summary: {str(e)}"
 
         # Grid info callback
-        print("Setting up grid info callback")
 
         @self.app.callback(
             Output("grid-info", "children"),
@@ -704,7 +700,6 @@ class InterpolateData:
             prevent_initial_call=True,
         )
         def update_grid_info(step, n_clicks, n_intervals):
-            print("Grid info callback triggered")
             if not hasattr(self, "domain") or self.domain is None:
                 return "No domain information available"
 
@@ -741,45 +736,81 @@ class InterpolateData:
                 return f"Error calculating grid: {str(e)}"
 
         # Interpolation button callback
-        print("Setting up interpolation button callback")
 
         @self.app.callback(
             [
                 Output("interpolate-button", "color"),
                 Output("interpolate-button", "children"),
                 Output("interpolation-status", "children"),
+                Output("computation-status", "data"),
             ],
             [Input("interpolate-button", "n_clicks")],
             [
                 State("interpolation-method", "value"),
                 State("grid-step", "value"),
                 State("interpolation-name", "value"),
+                State("computation-status", "data"),
             ],
             prevent_initial_call=True,
         )
-        def handle_interpolation(n_clicks, method, step, name):
-            print("Interpolation button callback triggered")
+        def handle_interpolation(n_clicks, method, step, name, status):
             if not all([method, step, name]):
-                return "danger", "Run Interpolation", "Missing parameters"
+                return "danger", "Run Interpolation", "Missing parameters", "idle"
+
+            if status == "computing":
+                raise PreventUpdate
 
             if self.start_interpolation(method, step, name):
-                return "warning", "Running...", "Process started"
+                return "warning", "Running...", "Process started", "computing"
             else:
-                return "danger", "Run Interpolation", "Failed to start"
+                return "danger", "Run Interpolation", "Failed to start", "idle"
+
+        # Process monitoring callback
+
+        @self.app.callback(
+            [
+                Output("interpolate-button", "color", allow_duplicate=True),
+                Output("interpolate-button", "children", allow_duplicate=True),
+                Output("interpolation-status", "children", allow_duplicate=True),
+                Output("computation-status", "data", allow_duplicate=True),
+            ],
+            [Input("computation-check", "n_intervals")],
+            [State("computation-status", "data")],
+            prevent_initial_call=True,
+        )
+        def monitor_interpolation_process(n_intervals, status):
+            """Monitor the interpolation process and update button state when complete"""
+            if status != "computing":
+                raise PreventUpdate
+
+            # Check if process is still running
+            if hasattr(self, "worker_process") and self.worker_process is not None:
+                if self.worker_process.is_alive():
+                    # Process is still running
+                    return dash.no_update, dash.no_update, dash.no_update, dash.no_update
+                else:
+                    # Process has completed
+                    self.worker_process.join()
+                    self.worker_process = None
+                    return "success", "Run Interpolation", "Interpolation completed successfully", "idle"
+            else:
+                # No process running
+                return "primary", "Run Interpolation", "Ready to interpolate", "idle"
 
         # Channel selector options callback - now also sets the value
-        print("Setting up channel selector callback")
 
         @self.app.callback(
             [
                 Output("channel-selector", "options"),
                 Output("channel-selector", "value"),
             ],
-            [Input("status-check", "n_intervals")],
+            [
+                Input("status-check", "n_intervals"),
+                Input("computation-status", "data"),
+            ],
             prevent_initial_call=True,
         )
-        def update_channel_selector(n_intervals):
-            print("Channel selector callback triggered")
+        def update_channel_selector(n_intervals, computation_status):
             if not self.current_interpolation_name:
                 return [], None
 
@@ -805,11 +836,9 @@ class InterpolateData:
                     and self.selected_channel is not None
                     and self.selected_channel < len(options)
                 ):
-                    print(f"Using stored channel selection: {self.selected_channel}")
                     return options, self.selected_channel
                 else:
                     # Default to first channel
-                    print("Defaulting to first channel")
                     self.selected_channel = 0
                     return options, 0
 
@@ -819,18 +848,18 @@ class InterpolateData:
                 return [], None
 
         # Heatmap callback
-        print("Setting up heatmap callback")
 
         @self.app.callback(
             Output("interpolation-heatmap", "figure"),
-            [Input("channel-selector", "value")],
+            [
+                Input("channel-selector", "value"),
+                Input("computation-status", "data"),
+            ],
             prevent_initial_call=True,
         )
-        def update_heatmap(channel_idx):
-            print(f"Heatmap callback triggered with channel_idx: {channel_idx}")
+        def update_heatmap(channel_idx, computation_status):
 
             if channel_idx is None:
-                print("No channel selected")
                 return go.Figure()  # Return an empty figure if no channel is selected
 
             # Store the selected channel
@@ -843,13 +872,12 @@ class InterpolateData:
                 )
 
                 if metadata_json is None:
-                    print("No metadata found in Redis")
                     return go.Figure()
 
                 metadata = json.loads(metadata_json)
-                y_points, x_points, nchannels = metadata[
+                nchannels, y_points, x_points = metadata[
                     "shape"
-                ]  # Y, X, Channels order
+                ]  # Channels, Y, X order (matching numpy_instrument)
 
                 # Get channel data using binary client
                 channel_data = self.redis_binary.hget(
@@ -858,7 +886,6 @@ class InterpolateData:
                 )
 
                 if channel_data is None:
-                    print(f"No data found for channel {channel_idx}")
                     return go.Figure()
 
                 # Reshape the binary data
@@ -867,19 +894,14 @@ class InterpolateData:
                 )
 
                 # Create heatmap with explicit value range and square pixels
+                # Note: channel_array has shape (y_points, x_points) from meshgrid
+                # This matches the numpy_instrument format where Y is slow axis and X is fast axis
+                
                 fig = go.Figure(
                     data=go.Heatmap(
                         z=channel_array,
-                        x=np.linspace(
-                            metadata["grid"]["xi"][0],
-                            metadata["grid"]["xi"][-1],
-                            x_points,
-                        ),
-                        y=np.linspace(
-                            metadata["grid"]["yi"][0],
-                            metadata["grid"]["yi"][-1],
-                            y_points,
-                        ),
+                        x=metadata["grid"]["xi"],  # x-coordinates (xi values)
+                        y=metadata["grid"]["yi"],  # y-coordinates (yi values)
                         colorscale="Viridis",
                         zmin=np.nanmin(channel_array),
                         zmax=np.nanmax(channel_array),
@@ -913,12 +935,9 @@ class InterpolateData:
                 return fig
 
             except Exception as e:
-                print(f"Error updating heatmap: {str(e)}")
-                traceback.print_exc()
                 return go.Figure()
 
         # Download current channel callback
-        print("Setting up download channel callback")
 
         @self.app.callback(
             Output("download-channel-data", "data"),
@@ -937,11 +956,10 @@ class InterpolateData:
                 )
 
                 if metadata_json is None:
-                    print("No metadata found in Redis")
                     return None
 
                 metadata = json.loads(metadata_json)
-                y_points, x_points, nchannels = metadata["shape"]
+                nchannels, y_points, x_points = metadata["shape"]  # Channels, Y, X order
                 wavenumber = metadata["wavenumbers"][channel_idx]
 
                 # Get channel data
@@ -951,7 +969,6 @@ class InterpolateData:
                 )
 
                 if channel_data is None:
-                    print(f"No data found for channel {channel_idx}")
                     return None
 
                 # Reshape the binary data
@@ -971,12 +988,9 @@ class InterpolateData:
                 )
 
             except Exception as e:
-                print(f"Error downloading channel data: {str(e)}")
-                traceback.print_exc()
                 return None
 
         # Download all channels callback
-        print("Setting up download all channels callback")
 
         @self.app.callback(
             Output("download-all-data", "data"),
@@ -994,11 +1008,10 @@ class InterpolateData:
                 )
 
                 if metadata_json is None:
-                    print("No metadata found in Redis")
                     return None
 
                 metadata = json.loads(metadata_json)
-                y_points, x_points, nchannels = metadata["shape"]
+                nchannels, y_points, x_points = metadata["shape"]  # Channels, Y, X order
                 wavenumbers = metadata["wavenumbers"]
 
                 # Create a dictionary to store all arrays
@@ -1015,11 +1028,7 @@ class InterpolateData:
                 buffer = io.BytesIO()
 
                 # Always get data for all channels without sampling
-                print(f"Saving all {nchannels} channels")
                 for channel_idx in range(nchannels):
-                    if channel_idx % 100 == 0:
-                        print(f"Processing channel {channel_idx}/{nchannels}")
-
                     channel_data = self.redis_binary.hget(
                         f"interpolation:{self.current_interpolation_name}",
                         f"channel:{channel_idx}".encode(),
@@ -1032,7 +1041,6 @@ class InterpolateData:
                         data_dict[f"channel_{channel_idx}"] = channel_array
 
                 # Save the dictionary to the buffer
-                print("Compressing data - this may take a while for large datasets...")
                 np.savez_compressed(buffer, **data_dict)
                 buffer.seek(0)
 
@@ -1043,9 +1051,9 @@ class InterpolateData:
                 )
 
             except Exception as e:
-                print(f"Error downloading all channels: {str(e)}")
-                traceback.print_exc()
                 return None
+
+
 
         # Download status callback
         @self.app.callback(
@@ -1075,7 +1083,7 @@ class InterpolateData:
 
             return ""
 
-        print("Callbacks setup complete")
+
 
     def load_data(self):
         """Load data from the current project database"""
@@ -1239,6 +1247,9 @@ class InterpolateData:
             print(f"Grid step size: {grid_step}")
             self.worker_process.start()
             print(f"Worker process started with PID: {self.worker_process.pid}")
+            
+            # Store current interpolation name for monitoring
+            self.current_interpolation_name = name
             return True
 
         except Exception as e:
@@ -1246,7 +1257,7 @@ class InterpolateData:
             traceback.print_exc()
             return False
 
-    def run(self, debug=False, port=8056):
+    def run(self, debug=False, port=8066):
         """Run the Dash application"""
         print(f"Starting server on port {port}")
         self.app.run_server(debug=debug, port=port)
