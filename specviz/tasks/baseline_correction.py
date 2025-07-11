@@ -64,6 +64,10 @@ def apply_baseline_correction(data, wavenumbers, method, **kwargs):
                 "func": baseline_fitter.pspline_arpls,
                 "params": ["lam", "num_knots", "spline_degree", "diff_order", "max_iter", "tol"]
             },
+            "interp_pts": {
+                "func": baseline_fitter.interp_pts,
+                "params": ["baseline_points", "interp_method"]
+            },
         }
     
     corrected_data = np.zeros_like(data)
@@ -417,6 +421,7 @@ def baseline_correction_runner(
             "quantile": ["poly_order", "quantile", "tol", "max_iter", "eps"],
             "rubberband": ["segments", "lam", "diff_order", "smooth_half_window"],
             "pspline_arpls": ["lam", "num_knots", "spline_degree", "diff_order", "max_iter", "tol"],
+            "interp_pts": ["baseline_points", "interp_method"],
         }
         
         if baseline_method in method_configs:
@@ -689,6 +694,7 @@ class BaselineCorrectionApp:
                                                                         {"label": "Quantile", "value": "quantile"},
                                                                         {"label": "Rubberband", "value": "rubberband"},
                                                                         {"label": "PSpline ARPLS", "value": "pspline_arpls"},
+                                                                        {"label": "Interpolate Points (Manual)", "value": "interp_pts"},
                                                                     ],
                                                                     value="imodpoly",
                                                                     className="mb-3",
@@ -1122,6 +1128,75 @@ class BaselineCorrectionApp:
                                                     ],
                                                     style={"display": "none"},
                                                 ),
+                                                
+                                                # Interpolate Points parameters
+                                                html.Div(
+                                                    id="interp-params",
+                                                    children=[
+                                                        dbc.Row(
+                                                            [
+                                                                dbc.Col(
+                                                                    [
+                                                                        html.Label("Interpolation Method:"),
+                                                                        dcc.Dropdown(
+                                                                            id="interp-method",
+                                                                            options=[
+                                                                                {"label": "Linear", "value": "linear"},
+                                                                                {"label": "Cubic", "value": "cubic"},
+                                                                                {"label": "Quadratic", "value": "quadratic"},
+                                                                                {"label": "Nearest", "value": "nearest"},
+                                                                                {"label": "Previous", "value": "previous"},
+                                                                                {"label": "Next", "value": "next"},
+                                                                            ],
+                                                                            value="linear",
+                                                                            className="form-control",
+                                                                        ),
+                                                                    ],
+                                                                    width=6,
+                                                                ),
+                                                                dbc.Col(
+                                                                    [
+                                                                        html.Label("Flat Region Wavenumbers:"),
+                                                                        dcc.Textarea(
+                                                                            id="baseline-points",
+                                                                            placeholder="Enter wavenumbers where baseline should be flat (e.g., 100,200,300,400)",
+                                                                            value="",
+                                                                            rows=4,
+                                                                            className="form-control",
+                                                                        ),
+                                                                        html.Small("Format: comma-separated wavenumbers where baseline should be flat", className="text-muted"),
+                                                                    ],
+                                                                    width=6,
+                                                                ),
+                                                            ],
+                                                            className="mb-3",
+                                                        ),
+                                                        dbc.Row(
+                                                            [
+                                                                dbc.Col(
+                                                                    [
+                                                                        html.Label("Preset Flat Regions:"),
+                                                                        dcc.Dropdown(
+                                                                            id="flat-region-presets",
+                                                                            options=[
+                                                                                {"label": "Custom Wavenumbers", "value": "custom"},
+                                                                                {"label": "Auto-Detect Minima", "value": "auto_minima"},
+                                                                                {"label": "Quarter Points", "value": "quarter_points"},
+                                                                                {"label": "Third Points", "value": "third_points"},
+                                                                                {"label": "Start and End Only", "value": "start_end"},
+                                                                            ],
+                                                                            value="start_end",
+                                                                            className="form-control",
+                                                                        ),
+                                                                    ],
+                                                                    width=12,
+                                                                ),
+                                                            ],
+                                                            className="mb-3",
+                                                        ),
+                                                    ],
+                                                    style={"display": "none"},
+                                                ),
                                             ]
                                         ),
                                     ]
@@ -1279,6 +1354,10 @@ class BaselineCorrectionApp:
                 State("pspline-tol", "value"),
                 State("knot-presets", "value"),
                 State("knot-positions", "value"),
+                # Interpolate Points parameters
+                State("interp-method", "value"),
+                State("baseline-points", "value"),
+                State("flat-region-presets", "value"),
             ],
             prevent_initial_call=True,
         )
@@ -1315,6 +1394,10 @@ class BaselineCorrectionApp:
             pspline_tol,
             knot_presets,
             knot_positions,
+            # Interpolate Points parameters
+            interp_method,
+            baseline_points,
+            flat_region_presets,
         ):
             ctx = dash.callback_context
             if not ctx.triggered:
@@ -1392,6 +1475,136 @@ class BaselineCorrectionApp:
                                 print(f"Using predefined knot set: {knot_presets}")
                             else:
                                 print(f"Warning: Unknown knot preset: {knot_presets}")
+                    elif baseline_method == "interp_pts":
+                        params.update({
+                            "interp_method": interp_method,
+                        })
+                        
+                        # Handle baseline points
+                        if baseline_points and baseline_points.strip():
+                            # Use custom wavenumbers for flat regions
+                            try:
+                                # Parse wavenumbers from text format
+                                wavenumbers_text = baseline_points.strip()
+                                wavenumber_list = [float(x.strip()) for x in wavenumbers_text.split(",")]
+                                
+                                # Find the closest wavenumber indices in the data
+                                wavenumber_indices = []
+                                for target_wavenumber in wavenumber_list:
+                                    # Find the closest wavenumber in the data
+                                    closest_idx = np.argmin(np.abs(self.wavenumbers - target_wavenumber))
+                                    wavenumber_indices.append(closest_idx)
+                                
+                                # Get the actual wavenumbers from the data
+                                actual_wavenumbers = [self.wavenumbers[idx] for idx in wavenumber_indices]
+                                
+                                # Calculate baseline intensities as the minimum value in each region
+                                # For now, use a simple approach: take the minimum of the data
+                                baseline_intensities = []
+                                for idx in wavenumber_indices:
+                                    # Use the minimum value in a small window around this point
+                                    window_start = max(0, idx - 5)
+                                    window_end = min(len(self.data[0]), idx + 6)
+                                    min_intensity = np.min(self.data[:, window_start:window_end])
+                                    baseline_intensities.append(min_intensity)
+                                
+                                # Create baseline points
+                                points_list = []
+                                for i, (wavenumber, intensity) in enumerate(zip(actual_wavenumbers, baseline_intensities)):
+                                    points_list.append([wavenumber, intensity])
+                                
+                                # Add start and end points if not already included
+                                if len(points_list) == 0:
+                                    # No custom points, use default
+                                    points_list = [[self.wavenumbers[0], np.min(self.data)], [self.wavenumbers[-1], np.min(self.data)]]
+                                else:
+                                    # Add start point if not already there
+                                    if points_list[0][0] > self.wavenumbers[0]:
+                                        start_intensity = np.min(self.data[:, :10])  # Use first 10 points
+                                        points_list.insert(0, [self.wavenumbers[0], start_intensity])
+                                    
+                                    # Add end point if not already there
+                                    if points_list[-1][0] < self.wavenumbers[-1]:
+                                        end_intensity = np.min(self.data[:, -10:])  # Use last 10 points
+                                        points_list.append([self.wavenumbers[-1], end_intensity])
+                                
+                                params["baseline_points"] = points_list
+                                print(f"Using custom flat regions at wavenumbers: {actual_wavenumbers}")
+                                print(f"Baseline points: {points_list}")
+                            except Exception as e:
+                                print(f"Warning: Invalid wavenumbers format: {baseline_points}, error: {str(e)}")
+                                # Fallback to default
+                                params["baseline_points"] = [[self.wavenumbers[0], np.min(self.data)], [self.wavenumbers[-1], np.min(self.data)]]
+                        else:
+                            # Use predefined flat region presets
+                            if flat_region_presets == "auto_minima":
+                                # Auto-detect minima in the data
+                                from scipy.signal import find_peaks
+                                # Use the mean spectrum to find minima
+                                mean_spectrum = np.mean(self.data, axis=0)
+                                # Find minima (negative peaks)
+                                minima_indices, _ = find_peaks(-mean_spectrum, distance=20, prominence=0.01)
+                                
+                                if len(minima_indices) > 0:
+                                    # Take up to 5 minima, evenly spaced
+                                    if len(minima_indices) > 5:
+                                        step = len(minima_indices) // 5
+                                        minima_indices = minima_indices[::step][:5]
+                                    
+                                    points_list = []
+                                    for idx in minima_indices:
+                                        wavenumber = self.wavenumbers[idx]
+                                        intensity = np.min(self.data[:, max(0, idx-5):min(len(self.data[0]), idx+6)])
+                                        points_list.append([wavenumber, intensity])
+                                    
+                                    # Add start and end points
+                                    start_intensity = np.min(self.data[:, :10])
+                                    end_intensity = np.min(self.data[:, -10:])
+                                    points_list.insert(0, [self.wavenumbers[0], start_intensity])
+                                    points_list.append([self.wavenumbers[-1], end_intensity])
+                                    
+                                    params["baseline_points"] = points_list
+                                else:
+                                    # Fallback to start and end
+                                    params["baseline_points"] = [[self.wavenumbers[0], np.min(self.data)], [self.wavenumbers[-1], np.min(self.data)]]
+                                    
+                            elif flat_region_presets == "quarter_points":
+                                # Use quarter points of the wavenumber range
+                                quarter_indices = [0, len(self.wavenumbers)//4, len(self.wavenumbers)//2, 3*len(self.wavenumbers)//4, len(self.wavenumbers)-1]
+                                points_list = []
+                                for idx in quarter_indices:
+                                    wavenumber = self.wavenumbers[idx]
+                                    window_start = max(0, idx - 5)
+                                    window_end = min(len(self.data[0]), idx + 6)
+                                    intensity = np.min(self.data[:, window_start:window_end])
+                                    points_list.append([wavenumber, intensity])
+                                
+                                params["baseline_points"] = points_list
+                                
+                            elif flat_region_presets == "third_points":
+                                # Use third points of the wavenumber range
+                                third_indices = [0, len(self.wavenumbers)//3, 2*len(self.wavenumbers)//3, len(self.wavenumbers)-1]
+                                points_list = []
+                                for idx in third_indices:
+                                    wavenumber = self.wavenumbers[idx]
+                                    window_start = max(0, idx - 5)
+                                    window_end = min(len(self.data[0]), idx + 6)
+                                    intensity = np.min(self.data[:, window_start:window_end])
+                                    points_list.append([wavenumber, intensity])
+                                
+                                params["baseline_points"] = points_list
+                                
+                            elif flat_region_presets == "start_end":
+                                # Just start and end points
+                                start_intensity = np.min(self.data[:, :10])
+                                end_intensity = np.min(self.data[:, -10:])
+                                params["baseline_points"] = [[self.wavenumbers[0], start_intensity], [self.wavenumbers[-1], end_intensity]]
+                                
+                            else:
+                                # Default: use minimum of data
+                                params["baseline_points"] = [[self.wavenumbers[0], np.min(self.data)], [self.wavenumbers[-1], np.min(self.data)]]
+                            
+                            print(f"Using preset flat region: {flat_region_presets}")
                     
                     # Filter out None values and other problematic values
                     filtered_params = {}
@@ -1535,6 +1748,7 @@ class BaselineCorrectionApp:
                 Output("quantile-params", "style"),
                 Output("rubberband-params", "style"),
                 Output("pspline-params", "style"),
+                Output("interp-params", "style"),
             ],
             [Input("baseline-method", "value")],
         )
@@ -1543,8 +1757,9 @@ class BaselineCorrectionApp:
             quantile_style = {"display": "block"} if baseline_method == "quantile" else {"display": "none"}
             rubberband_style = {"display": "block"} if baseline_method == "rubberband" else {"display": "none"}
             pspline_style = {"display": "block"} if baseline_method == "pspline_arpls" else {"display": "none"}
+            interp_style = {"display": "block"} if baseline_method == "interp_pts" else {"display": "none"}
             
-            return imodpoly_style, quantile_style, rubberband_style, pspline_style
+            return imodpoly_style, quantile_style, rubberband_style, pspline_style, interp_style
 
 
 
