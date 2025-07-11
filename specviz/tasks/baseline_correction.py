@@ -1293,7 +1293,7 @@ class BaselineCorrectionApp:
 
         # Redis status and current project callback (matches configure_umap)
         @self.app.callback(
-            [Output("redis-status", "children"), Output("redis-status", "className")],
+            [Output("redis-status", "children"), Output("redis-status", "className"), Output("current-project", "children")],
             [Input("status-check", "n_intervals"), Input("redis-refresh-button", "n_clicks")],
         )
         def update_redis_status_and_project(n_intervals, n_clicks):
@@ -1304,20 +1304,15 @@ class BaselineCorrectionApp:
             except Exception as e:
                 redis_status = html.Span(f"Failed: {str(e)}", className="text-danger")
                 redis_class = "text-danger"
-            return redis_status, redis_class
-
-        @self.app.callback(
-            Output("current-project", "children"),
-            [Input("status-check", "n_intervals"), Input("redis-refresh-button", "n_clicks")],
-        )
-        def update_current_project(n_intervals, n_clicks):
+            
             # Get current project
             project = self.redis_client.get("current_project")
             if project:
                 project = project.decode() if isinstance(project, bytes) else str(project)
             else:
                 project = "(none)"
-            return project
+            
+            return redis_status, redis_class, project
 
         @self.app.callback(
             [
