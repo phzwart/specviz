@@ -40,35 +40,35 @@ def apply_baseline_correction(data, wavenumbers, method, **kwargs):
     """
     baseline_fitter = Baseline(wavenumbers)
     
+    # Dictionary mapping method names to their function calls and accepted parameters
+    method_configs = {
+        "imodpoly": {
+            "func": baseline_fitter.imodpoly,
+            "params": ["poly_order", "tol", "max_iter", "use_original", "mask_initial_peaks", "num_std"]
+        },
+        "quantile": {
+            "func": baseline_fitter.quant_reg,
+            "params": ["poly_order", "quantile", "tol", "max_iter", "eps"]
+        },
+        "rubberband": {
+            "func": baseline_fitter.rubberband,
+            "params": ["segments", "lam", "diff_order", "smooth_half_window"]
+        },
+        "pspline_arpls": {
+            "func": baseline_fitter.pspline_arpls,
+            "params": ["lam", "num_knots", "spline_degree", "diff_order", "max_iter", "tol"]
+        },
+        "interp_pts": {
+            "func": baseline_fitter.interp_pts,
+            "params": ["baseline_points", "interp_method"]
+        },
+    }
+    
     # Clean kwargs to remove any dictionary values that might cause issues
     cleaned_kwargs = {}
     for key, value in kwargs.items():
         if value is not None and not isinstance(value, dict):
             cleaned_kwargs[key] = value
-    
-            # Dictionary mapping method names to their function calls and accepted parameters
-        method_configs = {
-            "imodpoly": {
-                "func": baseline_fitter.imodpoly,
-                "params": ["poly_order", "tol", "max_iter", "use_original", "mask_initial_peaks", "num_std"]
-            },
-            "quantile": {
-                "func": baseline_fitter.quant_reg,
-                "params": ["poly_order", "quantile", "tol", "max_iter", "eps"]
-            },
-            "rubberband": {
-                "func": baseline_fitter.rubberband,
-                "params": ["segments", "lam", "diff_order", "smooth_half_window"]
-            },
-            "pspline_arpls": {
-                "func": baseline_fitter.pspline_arpls,
-                "params": ["lam", "num_knots", "spline_degree", "diff_order", "max_iter", "tol"]
-            },
-            "interp_pts": {
-                "func": baseline_fitter.interp_pts,
-                "params": ["baseline_points", "interp_method"]
-            },
-        }
     
     corrected_data = np.zeros_like(data)
     baseline_data = np.zeros_like(data)
@@ -130,19 +130,31 @@ def apply_baseline_correction(data, wavenumbers, method, **kwargs):
                 final_kwargs = {}
                 for k, v in method_kwargs.items():
                     if v is not None and not isinstance(v, dict):
-                        # Convert to appropriate type based on parameter
-                        if k in ["poly_order", "max_iter", "num_knots", "spline_degree", "half_window", "segments", "diff_order", "smooth_half_window"]:
-                            # These should be integers
-                            try:
-                                final_kwargs[k] = int(float(v))
-                            except (ValueError, TypeError):
-                                print(f"Warning: Skipping non-numeric parameter {k}={v}")
+                        # Special handling for interp_pts method
+                        if method == "interp_pts":
+                            if k == "baseline_points":
+                                # baseline_points should be a list of [x, y] pairs
+                                final_kwargs[k] = v
+                            elif k == "interp_method":
+                                # interp_method should be a string
+                                final_kwargs[k] = str(v)
+                            else:
+                                # Skip other parameters for interp_pts
+                                print(f"Warning: Skipping unknown parameter {k}={v} for interp_pts method")
                         else:
-                            # These should be floats
-                            try:
-                                final_kwargs[k] = float(v)
-                            except (ValueError, TypeError):
-                                print(f"Warning: Skipping non-numeric parameter {k}={v}")
+                            # Convert to appropriate type based on parameter for other methods
+                            if k in ["poly_order", "max_iter", "num_knots", "spline_degree", "half_window", "segments", "diff_order", "smooth_half_window"]:
+                                # These should be integers
+                                try:
+                                    final_kwargs[k] = int(float(v))
+                                except (ValueError, TypeError):
+                                    print(f"Warning: Skipping non-numeric parameter {k}={v}")
+                            else:
+                                # These should be floats
+                                try:
+                                    final_kwargs[k] = float(v)
+                                except (ValueError, TypeError):
+                                    print(f"Warning: Skipping non-numeric parameter {k}={v}")
                 
                 # Call the function with filtered parameters
                 try:
@@ -471,15 +483,27 @@ def baseline_correction_runner(
         safe_baseline_params = {}
         for k, v in baseline_params.items():
             try:
-                # Convert to appropriate type based on parameter
-                if k in ["poly_order", "max_iter", "num_knots", "spline_degree", "half_window", "segments", "diff_order", "smooth_half_window"]:
-                    # These should be integers
-                    int_val = int(float(v))
-                    safe_baseline_params[k] = int_val
+                # Special handling for interp_pts method
+                if baseline_method == "interp_pts":
+                    if k == "baseline_points":
+                        # baseline_points should be a list of [x, y] pairs
+                        safe_baseline_params[k] = v
+                    elif k == "interp_method":
+                        # interp_method should be a string
+                        safe_baseline_params[k] = str(v)
+                    else:
+                        # Skip other parameters for interp_pts
+                        print(f"Warning: Skipping unknown parameter {k}={v} for interp_pts method")
                 else:
-                    # These should be floats
-                    float_val = float(v)
-                    safe_baseline_params[k] = float_val
+                    # Convert to appropriate type based on parameter for other methods
+                    if k in ["poly_order", "max_iter", "num_knots", "spline_degree", "half_window", "segments", "diff_order", "smooth_half_window"]:
+                        # These should be integers
+                        int_val = int(float(v))
+                        safe_baseline_params[k] = int_val
+                    else:
+                        # These should be floats
+                        float_val = float(v)
+                        safe_baseline_params[k] = float_val
             except (ValueError, TypeError):
                 print(f"Warning: Skipping non-numeric parameter {k}={v} (type: {type(v)})")
         
