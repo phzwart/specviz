@@ -697,16 +697,24 @@ class ExploreEmbedding:
                 Input("normalized-data-store", "data"),
                 Input("spectral-view-toggle", "value"),
             ],
+            [State("data-source", "value")],
             prevent_initial_call=True,
         )
         def update_spectral_plot(
-            selected_indices, data_loaded, normalized_data, show_individual
+            selected_indices, data_loaded, normalized_data, show_individual, data_source
         ):
             if not data_loaded or not hasattr(self, "spectra") or not selected_indices:
+                # Create title with data source information
+                data_source_label = {
+                    "measured_data": "Original Data",
+                    "baseline_corrected_data": "Baseline Corrected Data", 
+                    "baseline_data": "Baseline Data"
+                }.get(data_source, data_source)
+                
                 return {
                     "data": [],
                     "layout": {
-                        "title": "Select points to see spectral statistics",
+                        "title": f"Select points to see spectral statistics from {data_source_label}",
                         "xaxis": {"title": "Wavenumber (cm⁻¹)"},
                         "yaxis": {"title": "Intensity"},
                         "showlegend": True,
@@ -724,7 +732,13 @@ class ExploreEmbedding:
             else:
                 working_spectra = self.spectra
                 working_wavenumbers = self.wavenumbers
-                title_prefix = "Raw Spectra"
+                # Create title with data source information
+                data_source_label = {
+                    "measured_data": "Original Data",
+                    "baseline_corrected_data": "Baseline Corrected Data", 
+                    "baseline_data": "Baseline Data"
+                }.get(data_source, data_source)
+                title_prefix = f"Raw Spectra from {data_source_label}"
 
             # Validate indices are within bounds
             valid_indices = [i for i in selected_indices if i < len(working_spectra)]

@@ -1001,9 +1001,10 @@ class ConfigureUMAP:
         @self.app.callback(
             Output("spectral-plot", "figure"),
             [Input("selection-store", "data")],
+            [State("data-source", "value")],
             prevent_initial_call=True,
         )
-        def update_spectral_plot(selected_indices):
+        def update_spectral_plot(selected_indices, data_source):
             if not selected_indices or self.spectra is None:
                 return {
                     "data": [],
@@ -1058,10 +1059,17 @@ class ConfigureUMAP:
                 },
             ]
 
+            # Create title with data source information
+            data_source_label = {
+                "measured_data": "Original Data",
+                "baseline_corrected_data": "Baseline Corrected Data", 
+                "baseline_data": "Baseline Data"
+            }.get(data_source, data_source)
+
             return {
                 "data": traces,
                 "layout": {
-                    "title": f"Selected Spectra (n={len(selected_indices)} spectra)",
+                    "title": f"Selected Spectra from {data_source_label} (n={len(selected_indices)} spectra)",
                     "xaxis": {"title": "Wavenumber (cm⁻¹)", "autorange": "reversed"},
                     "yaxis": {"title": "Intensity"},
                     "showlegend": True,
@@ -1075,9 +1083,10 @@ class ConfigureUMAP:
                 Output("spectral-plot", "figure", allow_duplicate=True),
             ],
             [Input("status-output", "children")],
+            [State("data-source", "value")],
             prevent_initial_call=True,
         )
-        def update_plots_after_umap(status):
+        def update_plots_after_umap(status, data_source):
             if status == "Computation complete!" and self.umap_embedding is not None:
                 # Create initial UMAP plot
                 umap_fig = {
@@ -1105,11 +1114,17 @@ class ConfigureUMAP:
                     },
                 }
 
-                # Create empty spectral plot
+                # Create empty spectral plot with data source info
+                data_source_label = {
+                    "measured_data": "Original Data",
+                    "baseline_corrected_data": "Baseline Corrected Data", 
+                    "baseline_data": "Baseline Data"
+                }.get(data_source, data_source)
+                
                 spectral_fig = {
                     "data": [],
                     "layout": {
-                        "title": "Select points to see spectral statistics",
+                        "title": f"Select points to see spectral statistics from {data_source_label}",
                         "xaxis": {"title": "Wavenumber (cm⁻¹)"},
                         "yaxis": {"title": "Intensity"},
                         "showlegend": True,
@@ -1132,9 +1147,10 @@ class ConfigureUMAP:
         @self.app.callback(
             Output("export-status", "children"),
             [Input("export-button", "n_clicks")],
+            [State("data-source", "value")],
             prevent_initial_call=True,
         )
-        def export_embedding(n_clicks):
+        def export_embedding(n_clicks, data_source):
             if n_clicks and self.umap_embedding is not None:
                 try:
                     # Get current project path from Redis
@@ -1147,9 +1163,9 @@ class ConfigureUMAP:
                     # Connect to database
                     conn = duckdb.connect(db_path)
 
-                    # Get HCD indices from measured_data table
-                    measured_data = read_df_from_db(conn, "measured_data")
-                    hcd_indices = measured_data.index.values
+                    # Get HCD indices from the current data source table
+                    spectral_data = read_df_from_db(conn, data_source)
+                    hcd_indices = spectral_data["hcd_indx"].values
 
                     # Create DataFrame with hcd_indx, UMAP coordinates, and selection column
                     embedding_df = pd.DataFrame(
@@ -1166,8 +1182,14 @@ class ConfigureUMAP:
 
                     conn.close()
 
+                    data_source_label = {
+                        "measured_data": "Original Data",
+                        "baseline_corrected_data": "Baseline Corrected Data", 
+                        "baseline_data": "Baseline Data"
+                    }.get(data_source, data_source)
+
                     return html.Div(
-                        "Embedding exported successfully!", className="text-success"
+                        f"Embedding exported successfully from {data_source_label}!", className="text-success"
                     )
                 except Exception as e:
                     return html.Div(
