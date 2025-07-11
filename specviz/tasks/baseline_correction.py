@@ -1233,9 +1233,16 @@ class BaselineCorrectionApp:
                                 corrected_data = self.redis_client.get(f"temp:baseline:{os.getpid()}:corrected")
                                 baseline_data = self.redis_client.get(f"temp:baseline:{os.getpid()}:baseline")
                                 
+                                print(f"Debug: corrected_data from Redis: {corrected_data is not None}")
+                                print(f"Debug: baseline_data from Redis: {baseline_data is not None}")
+                                
                                 if corrected_data and baseline_data:
                                     corrected_array = np.frombuffer(corrected_data)
                                     baseline_array = np.frombuffer(baseline_data)
+                                    
+                                    print(f"Debug: corrected_array size: {len(corrected_array)}")
+                                    print(f"Debug: baseline_array size: {len(baseline_array)}")
+                                    print(f"Debug: expected size: {self.data.shape[0] * self.data.shape[1]}")
                                     
                                     # Calculate the correct shape based on the array size
                                     if len(corrected_array) == self.data.shape[0] * self.data.shape[1]:
@@ -1253,6 +1260,8 @@ class BaselineCorrectionApp:
                                     
                             except Exception as e:
                                 print(f"Error loading corrected data: {str(e)}")
+                                import traceback
+                                traceback.print_exc()
                             
                             self._cleanup_redis_keys(os.getpid())
                             self.process = None
@@ -1296,22 +1305,31 @@ class BaselineCorrectionApp:
 
         # Redis status and current project callback (matches configure_umap)
         @self.app.callback(
-            [Output("redis-status", "children"), Output("current-project", "children")],
+            [Output("redis-status", "children"), Output("redis-status", "className")],
             [Input("status-check", "n_intervals"), Input("redis-refresh-button", "n_clicks")],
         )
         def update_redis_status_and_project(n_intervals, n_clicks):
             try:
                 self.redis_client.ping()
                 redis_status = html.Span("Connected", className="text-success")
+                redis_class = "text-success"
             except Exception as e:
                 redis_status = html.Span(f"Failed: {str(e)}", className="text-danger")
+                redis_class = "text-danger"
+            return redis_status, redis_class
+
+        @self.app.callback(
+            Output("current-project", "children"),
+            [Input("status-check", "n_intervals"), Input("redis-refresh-button", "n_clicks")],
+        )
+        def update_current_project(n_intervals, n_clicks):
             # Get current project
             project = self.redis_client.get("current_project")
             if project:
                 project = project.decode() if isinstance(project, bytes) else str(project)
             else:
                 project = "(none)"
-            return redis_status, project
+            return project
 
         @self.app.callback(
             [
@@ -1545,7 +1563,9 @@ class BaselineCorrectionApp:
                     
                     return f"Exported to tables: baseline_corrected_data, baseline_data"
                 else:
-                    return "No corrected/baseline data available for export. Please run baseline correction first."
+                    # Debug: check what attributes are available
+                    available_attrs = [attr for attr in dir(self) if not attr.startswith('_')]
+                    return f"No corrected/baseline data available for export. Available attributes: {available_attrs}. Please run baseline correction first."
                     
             except Exception as e:
                 return f"Error exporting data: {str(e)}"
