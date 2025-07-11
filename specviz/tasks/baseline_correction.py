@@ -1513,16 +1513,11 @@ class BaselineCorrectionApp:
             prevent_initial_call=True,
         )
         def export_corrected_data(n_clicks):
-            if self.current_pid is None:
-                return "No data to export"
-
             try:
-                corrected_data = self.redis_client.get(f"temp:baseline:{os.getpid()}:corrected")
-                baseline_data = self.redis_client.get(f"temp:baseline:{os.getpid()}:baseline")
-                
-                if corrected_data and baseline_data:
-                    corrected_array = np.frombuffer(corrected_data).reshape(self.data.shape)
-                    baseline_array = np.frombuffer(baseline_data).reshape(self.data.shape)
+                # Check if we have corrected and baseline data in memory
+                if hasattr(self, 'corrected_data') and hasattr(self, 'baseline_data'):
+                    corrected_array = self.corrected_data
+                    baseline_array = self.baseline_data
                     
                     # Get database path from Redis
                     db_path = self.redis_client.get("current_project")
@@ -1550,7 +1545,7 @@ class BaselineCorrectionApp:
                     
                     return f"Exported to tables: baseline_corrected_data, baseline_data"
                 else:
-                    return "No corrected/baseline data available for export"
+                    return "No corrected/baseline data available for export. Please run baseline correction first."
                     
             except Exception as e:
                 return f"Error exporting data: {str(e)}"
