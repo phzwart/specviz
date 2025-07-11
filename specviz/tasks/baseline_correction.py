@@ -48,101 +48,21 @@ def apply_baseline_correction(data, wavenumbers, method, **kwargs):
     
             # Dictionary mapping method names to their function calls and accepted parameters
         method_configs = {
-            "polynomial": {
-                "func": baseline_fitter.poly,
-                "params": ["poly_order"]
-            },
-            "modpoly": {
-                "func": baseline_fitter.modpoly,
-                "params": ["poly_order", "tol", "max_iter", "use_original", "mask_initial_peaks"]
-            },
             "imodpoly": {
                 "func": baseline_fitter.imodpoly,
                 "params": ["poly_order", "tol", "max_iter", "use_original", "mask_initial_peaks", "num_std"]
-            },
-            "penalized_poly": {
-                "func": baseline_fitter.penalized_poly,
-                "params": ["poly_order", "tol", "max_iter", "cost_function", "threshold", "alpha_factor"]
-            },
-            "loess": {
-                "func": baseline_fitter.loess,
-                "params": ["fraction", "total_points", "poly_order", "scale", "tol", "max_iter", "symmetric_weights", "use_threshold", "num_std", "use_original", "conserve_memory", "delta"]
             },
             "quantile": {
                 "func": baseline_fitter.quant_reg,
                 "params": ["poly_order", "quantile", "tol", "max_iter", "eps"]
             },
-            "rolling_ball": {
-                "func": baseline_fitter.rolling_ball,
-                "params": ["half_window", "smooth_half_window"]  # Avoid pad_kwargs, window_kwargs, kwargs
-            },
-            "morphological": {
-                "func": baseline_fitter.mor,
-                "params": ["half_window"]  # Only pass half_window, avoid window_kwargs and kwargs
-            },
             "rubberband": {
                 "func": baseline_fitter.rubberband,
                 "params": ["segments", "lam", "diff_order", "smooth_half_window"]
             },
-            "mpls": {
-                "func": baseline_fitter.mpls,
-                "params": ["half_window", "lam", "p", "diff_order", "tol", "max_iter"]  # Avoid window_kwargs, kwargs
-            },
-            "arpls": {
-                "func": baseline_fitter.arpls,
-                "params": ["lam", "diff_order", "max_iter", "tol"]
-            },
-            "asls": {
-                "func": baseline_fitter.asls,
-                "params": ["lam", "p", "diff_order", "max_iter", "tol"]
-            },
-            "iasls": {
-                "func": baseline_fitter.iasls,
-                "params": ["lam", "p", "lam_1", "max_iter", "tol", "diff_order"]
-            },
-            "psalsa": {
-                "func": baseline_fitter.psalsa,
-                "params": ["lam", "p", "k", "diff_order", "max_iter", "tol"]
-            },
-            "drpls": {
-                "func": baseline_fitter.drpls,
-                "params": ["lam", "eta", "max_iter", "tol", "diff_order"]
-            },
-            "iarpls": {
-                "func": baseline_fitter.iarpls,
-                "params": ["lam", "diff_order", "max_iter", "tol"]
-            },
-            "aspls": {
-                "func": baseline_fitter.aspls,
-                "params": ["lam", "diff_order", "max_iter", "tol", "alpha", "asymmetric_coef"]
-            },
             "pspline_asls": {
                 "func": baseline_fitter.pspline_asls,
                 "params": ["lam", "p", "num_knots", "spline_degree", "diff_order", "max_iter", "tol"]
-            },
-            "pspline_iasls": {
-                "func": baseline_fitter.pspline_iasls,
-                "params": ["lam", "p", "lam_1", "num_knots", "spline_degree", "max_iter", "tol", "diff_order"]
-            },
-            "pspline_arpls": {
-                "func": baseline_fitter.pspline_arpls,
-                "params": ["lam", "num_knots", "spline_degree", "diff_order", "max_iter", "tol"]
-            },
-            "pspline_iarpls": {
-                "func": baseline_fitter.pspline_iarpls,
-                "params": ["lam", "num_knots", "spline_degree", "diff_order", "max_iter", "tol"]
-            },
-            "pspline_psalsa": {
-                "func": baseline_fitter.pspline_psalsa,
-                "params": ["lam", "p", "k", "num_knots", "spline_degree", "diff_order", "max_iter", "tol"]
-            },
-            "pspline_drpls": {
-                "func": baseline_fitter.pspline_drpls,
-                "params": ["lam", "eta", "num_knots", "spline_degree", "diff_order", "max_iter", "tol"]
-            },
-            "pspline_aspls": {
-                "func": baseline_fitter.pspline_aspls,
-                "params": ["lam", "num_knots", "spline_degree", "diff_order", "max_iter", "tol", "alpha", "asymmetric_coef"]
             },
         }
     
@@ -480,30 +400,10 @@ def baseline_correction_runner(
         
         # Dictionary mapping method names to their accepted parameters (same as in apply_baseline_correction)
         method_configs = {
-            "polynomial": ["poly_order"],
-            "modpoly": ["poly_order", "tol", "max_iter", "use_original", "mask_initial_peaks"],
             "imodpoly": ["poly_order", "tol", "max_iter", "use_original", "mask_initial_peaks", "num_std"],
-            "penalized_poly": ["poly_order", "tol", "max_iter", "cost_function", "threshold", "alpha_factor"],
-            "loess": ["fraction", "total_points", "poly_order", "scale", "tol", "max_iter", "symmetric_weights", "use_threshold", "num_std", "use_original", "conserve_memory", "delta"],
             "quantile": ["poly_order", "quantile", "tol", "max_iter", "eps"],
-            "rolling_ball": ["half_window", "smooth_half_window"],
-            "morphological": ["half_window"],
             "rubberband": ["segments", "lam", "diff_order", "smooth_half_window"],
-            "mpls": ["half_window", "lam", "p", "diff_order", "tol", "max_iter"],
-            "arpls": ["lam", "diff_order", "max_iter", "tol"],
-            "asls": ["lam", "p", "diff_order", "max_iter", "tol"],
-            "iasls": ["lam", "p", "lam_1", "max_iter", "tol", "diff_order"],
-            "psalsa": ["lam", "p", "k", "diff_order", "max_iter", "tol"],
-            "drpls": ["lam", "eta", "max_iter", "tol", "diff_order"],
-            "iarpls": ["lam", "diff_order", "max_iter", "tol"],
-            "aspls": ["lam", "diff_order", "max_iter", "tol", "alpha", "asymmetric_coef"],
             "pspline_asls": ["lam", "p", "num_knots", "spline_degree", "diff_order", "max_iter", "tol"],
-            "pspline_iasls": ["lam", "p", "lam_1", "num_knots", "spline_degree", "max_iter", "tol", "diff_order"],
-            "pspline_arpls": ["lam", "num_knots", "spline_degree", "diff_order", "max_iter", "tol"],
-            "pspline_iarpls": ["lam", "num_knots", "spline_degree", "diff_order", "max_iter", "tol"],
-            "pspline_psalsa": ["lam", "p", "k", "num_knots", "spline_degree", "diff_order", "max_iter", "tol"],
-            "pspline_drpls": ["lam", "eta", "num_knots", "spline_degree", "diff_order", "max_iter", "tol"],
-            "pspline_aspls": ["lam", "num_knots", "spline_degree", "diff_order", "max_iter", "tol", "alpha", "asymmetric_coef"],
         }
         
         if baseline_method in method_configs:
@@ -772,32 +672,12 @@ class BaselineCorrectionApp:
                                                                 dcc.Dropdown(
                                                                     id="baseline-method",
                                                                     options=[
-                                                                        {"label": "Polynomial", "value": "polynomial"},
-                                                                        {"label": "Modified Polynomial", "value": "modpoly"},
                                                                         {"label": "Iterative Modified Polynomial", "value": "imodpoly"},
-                                                                        {"label": "Penalized Polynomial", "value": "penalized_poly"},
-                                                                        {"label": "LOESS", "value": "loess"},
                                                                         {"label": "Quantile", "value": "quantile"},
-                                                                        {"label": "Rolling Ball", "value": "rolling_ball"},
-                                                                        {"label": "Morphological", "value": "morphological"},
                                                                         {"label": "Rubberband", "value": "rubberband"},
-                                                                        {"label": "MPLS", "value": "mpls"},
-                                                                        {"label": "ARPLS", "value": "arpls"},
-                                                                        {"label": "ASLS", "value": "asls"},
-                                                                        {"label": "IASLS", "value": "iasls"},
-                                                                        {"label": "PSALSA", "value": "psalsa"},
-                                                                        {"label": "DRPLS", "value": "drpls"},
-                                                                        {"label": "IARPLS", "value": "iarpls"},
-                                                                        {"label": "ASPLS", "value": "aspls"},
                                                                         {"label": "PSpline ASLS", "value": "pspline_asls"},
-                                                                        {"label": "PSpline IASLS", "value": "pspline_iasls"},
-                                                                        {"label": "PSpline ARPLS", "value": "pspline_arpls"},
-                                                                        {"label": "PSpline IARPLS", "value": "pspline_iarpls"},
-                                                                        {"label": "PSpline PSALSA", "value": "pspline_psalsa"},
-                                                                        {"label": "PSpline DRPLS", "value": "pspline_drpls"},
-                                                                        {"label": "PSpline ASPLS", "value": "pspline_aspls"},
                                                                     ],
-                                                                    value="polynomial",
+                                                                    value="imodpoly",
                                                                     className="mb-3",
                                                                 ),
                                                             ],
@@ -825,9 +705,9 @@ class BaselineCorrectionApp:
                                                     ]
                                                 ),
                                                 
-                                                # Polynomial parameters
+                                                # Iterative Modified Polynomial parameters
                                                 html.Div(
-                                                    id="polynomial-params",
+                                                    id="imodpoly-params",
                                                     children=[
                                                         dbc.Row(
                                                             [
@@ -843,46 +723,71 @@ class BaselineCorrectionApp:
                                                                             className="form-control",
                                                                         ),
                                                                     ],
-                                                                    width=6,
+                                                                    width=4,
                                                                 ),
                                                                 dbc.Col(
                                                                     [
-                                                                        html.Label("Lambda Parameter:"),
+                                                                        html.Label("Tolerance:"),
                                                                         dcc.Input(
-                                                                            id="lambda-param",
+                                                                            id="tol",
                                                                             type="number",
-                                                                            value=1000.0,
-                                                                            step=100.0,
+                                                                            value=0.001,
+                                                                            min=0.0001,
+                                                                            max=0.1,
+                                                                            step=0.0001,
                                                                             className="form-control",
                                                                         ),
                                                                     ],
-                                                                    width=6,
+                                                                    width=4,
                                                                 ),
-                                                            ]
+                                                                dbc.Col(
+                                                                    [
+                                                                        html.Label("Max Iterations:"),
+                                                                        dcc.Input(
+                                                                            id="max-iter",
+                                                                            type="number",
+                                                                            value=100,
+                                                                            min=10,
+                                                                            max=1000,
+                                                                            className="form-control",
+                                                                        ),
+                                                                    ],
+                                                                    width=4,
+                                                                ),
+                                                            ],
+                                                            className="mb-3",
                                                         ),
-                                                    ]
-                                                ),
-                                                
-                                                # LOESS parameters
-                                                html.Div(
-                                                    id="loess-params",
-                                                    children=[
                                                         dbc.Row(
                                                             [
                                                                 dbc.Col(
                                                                     [
-                                                                        html.Label("Fraction:"),
-                                                                        dcc.Input(
-                                                                            id="frac",
-                                                                            type="number",
-                                                                            value=0.1,
-                                                                            min=0.01,
-                                                                            max=1.0,
-                                                                            step=0.01,
+                                                                        html.Label("Use Original:"),
+                                                                        dcc.Dropdown(
+                                                                            id="use-original",
+                                                                            options=[
+                                                                                {"label": "True", "value": True},
+                                                                                {"label": "False", "value": False},
+                                                                            ],
+                                                                            value=True,
                                                                             className="form-control",
                                                                         ),
                                                                     ],
-                                                                    width=6,
+                                                                    width=4,
+                                                                ),
+                                                                dbc.Col(
+                                                                    [
+                                                                        html.Label("Mask Initial Peaks:"),
+                                                                        dcc.Dropdown(
+                                                                            id="mask-initial-peaks",
+                                                                            options=[
+                                                                                {"label": "True", "value": True},
+                                                                                {"label": "False", "value": False},
+                                                                            ],
+                                                                            value=False,
+                                                                            className="form-control",
+                                                                        ),
+                                                                    ],
+                                                                    width=4,
                                                                 ),
                                                                 dbc.Col(
                                                                     [
@@ -897,35 +802,100 @@ class BaselineCorrectionApp:
                                                                             className="form-control",
                                                                         ),
                                                                     ],
-                                                                    width=6,
+                                                                    width=4,
                                                                 ),
-                                                            ]
+                                                            ],
+                                                            className="mb-3",
                                                         ),
-                                                    ],
-                                                    style={"display": "none"},
+                                                    ]
                                                 ),
                                                 
-                                                # Rolling ball parameters
+                                                # Quantile parameters
                                                 html.Div(
-                                                    id="rolling-ball-params",
+                                                    id="quantile-params",
                                                     children=[
                                                         dbc.Row(
                                                             [
                                                                 dbc.Col(
                                                                     [
-                                                                        html.Label("Half Window:"),
+                                                                        html.Label("Polynomial Order:"),
                                                                         dcc.Input(
-                                                                            id="half-window",
+                                                                            id="quantile-poly-order",
                                                                             type="number",
-                                                                            value=50,
+                                                                            value=2,
                                                                             min=1,
+                                                                            max=10,
+                                                                            className="form-control",
+                                                                        ),
+                                                                    ],
+                                                                    width=3,
+                                                                ),
+                                                                dbc.Col(
+                                                                    [
+                                                                        html.Label("Quantile:"),
+                                                                        dcc.Input(
+                                                                            id="quantile",
+                                                                            type="number",
+                                                                            value=0.1,
+                                                                            min=0.01,
+                                                                            max=0.5,
+                                                                            step=0.01,
+                                                                            className="form-control",
+                                                                        ),
+                                                                    ],
+                                                                    width=3,
+                                                                ),
+                                                                dbc.Col(
+                                                                    [
+                                                                        html.Label("Tolerance:"),
+                                                                        dcc.Input(
+                                                                            id="quantile-tol",
+                                                                            type="number",
+                                                                            value=0.001,
+                                                                            min=0.0001,
+                                                                            max=0.1,
+                                                                            step=0.0001,
+                                                                            className="form-control",
+                                                                        ),
+                                                                    ],
+                                                                    width=3,
+                                                                ),
+                                                                dbc.Col(
+                                                                    [
+                                                                        html.Label("Max Iterations:"),
+                                                                        dcc.Input(
+                                                                            id="quantile-max-iter",
+                                                                            type="number",
+                                                                            value=100,
+                                                                            min=10,
                                                                             max=1000,
                                                                             className="form-control",
                                                                         ),
                                                                     ],
-                                                                    width=6,
+                                                                    width=3,
                                                                 ),
-                                                            ]
+                                                            ],
+                                                            className="mb-3",
+                                                        ),
+                                                        dbc.Row(
+                                                            [
+                                                                dbc.Col(
+                                                                    [
+                                                                        html.Label("Epsilon:"),
+                                                                        dcc.Input(
+                                                                            id="eps",
+                                                                            type="number",
+                                                                            value=1e-8,
+                                                                            min=1e-10,
+                                                                            max=1e-5,
+                                                                            step=1e-9,
+                                                                            className="form-control",
+                                                                        ),
+                                                                    ],
+                                                                    width=4,
+                                                                ),
+                                                            ],
+                                                            className="mb-3",
                                                         ),
                                                     ],
                                                     style={"display": "none"},
@@ -949,7 +919,7 @@ class BaselineCorrectionApp:
                                                                             className="form-control",
                                                                         ),
                                                                     ],
-                                                                    width=6,
+                                                                    width=3,
                                                                 ),
                                                                 dbc.Col(
                                                                     [
@@ -962,20 +932,77 @@ class BaselineCorrectionApp:
                                                                             className="form-control",
                                                                         ),
                                                                     ],
-                                                                    width=6,
+                                                                    width=3,
                                                                 ),
-                                                            ]
+                                                                dbc.Col(
+                                                                    [
+                                                                        html.Label("Diff Order:"),
+                                                                        dcc.Input(
+                                                                            id="diff-order",
+                                                                            type="number",
+                                                                            value=2,
+                                                                            min=1,
+                                                                            max=4,
+                                                                            className="form-control",
+                                                                        ),
+                                                                    ],
+                                                                    width=3,
+                                                                ),
+                                                                dbc.Col(
+                                                                    [
+                                                                        html.Label("Smooth Half Window:"),
+                                                                        dcc.Input(
+                                                                            id="smooth-half-window",
+                                                                            type="number",
+                                                                            value=1,
+                                                                            min=1,
+                                                                            max=100,
+                                                                            className="form-control",
+                                                                        ),
+                                                                    ],
+                                                                    width=3,
+                                                                ),
+                                                            ],
+                                                            className="mb-3",
                                                         ),
                                                     ],
                                                     style={"display": "none"},
                                                 ),
                                                 
-                                                # PSpline parameters
+                                                # PSpline ASLS parameters
                                                 html.Div(
                                                     id="pspline-params",
                                                     children=[
                                                         dbc.Row(
                                                             [
+                                                                dbc.Col(
+                                                                    [
+                                                                        html.Label("Lambda:"),
+                                                                        dcc.Input(
+                                                                            id="pspline-lam",
+                                                                            type="number",
+                                                                            value=1000.0,
+                                                                            step=100.0,
+                                                                            className="form-control",
+                                                                        ),
+                                                                    ],
+                                                                    width=3,
+                                                                ),
+                                                                dbc.Col(
+                                                                    [
+                                                                        html.Label("P:"),
+                                                                        dcc.Input(
+                                                                            id="pspline-p",
+                                                                            type="number",
+                                                                            value=0.01,
+                                                                            min=0.001,
+                                                                            max=1.0,
+                                                                            step=0.001,
+                                                                            className="form-control",
+                                                                        ),
+                                                                    ],
+                                                                    width=3,
+                                                                ),
                                                                 dbc.Col(
                                                                     [
                                                                         html.Label("Number of Knots:"),
@@ -988,7 +1015,7 @@ class BaselineCorrectionApp:
                                                                             className="form-control",
                                                                         ),
                                                                     ],
-                                                                    width=6,
+                                                                    width=3,
                                                                 ),
                                                                 dbc.Col(
                                                                     [
@@ -1002,9 +1029,71 @@ class BaselineCorrectionApp:
                                                                             className="form-control",
                                                                         ),
                                                                     ],
-                                                                    width=6,
+                                                                    width=3,
                                                                 ),
-                                                            ]
+                                                            ],
+                                                            className="mb-3",
+                                                        ),
+                                                        dbc.Row(
+                                                            [
+                                                                dbc.Col(
+                                                                    [
+                                                                        html.Label("Diff Order:"),
+                                                                        dcc.Input(
+                                                                            id="pspline-diff-order",
+                                                                            type="number",
+                                                                            value=2,
+                                                                            min=1,
+                                                                            max=4,
+                                                                            className="form-control",
+                                                                        ),
+                                                                    ],
+                                                                    width=3,
+                                                                ),
+                                                                dbc.Col(
+                                                                    [
+                                                                        html.Label("Max Iterations:"),
+                                                                        dcc.Input(
+                                                                            id="pspline-max-iter",
+                                                                            type="number",
+                                                                            value=100,
+                                                                            min=10,
+                                                                            max=1000,
+                                                                            className="form-control",
+                                                                        ),
+                                                                    ],
+                                                                    width=3,
+                                                                ),
+                                                                dbc.Col(
+                                                                    [
+                                                                        html.Label("Tolerance:"),
+                                                                        dcc.Input(
+                                                                            id="pspline-tol",
+                                                                            type="number",
+                                                                            value=0.001,
+                                                                            min=0.0001,
+                                                                            max=0.1,
+                                                                            step=0.0001,
+                                                                            className="form-control",
+                                                                        ),
+                                                                    ],
+                                                                    width=3,
+                                                                ),
+                                                                dbc.Col(
+                                                                    [
+                                                                        html.Label("Knot Positions:"),
+                                                                        dcc.Textarea(
+                                                                            id="knot-positions",
+                                                                            placeholder="Enter knot positions as comma-separated values (e.g., 0, 0.25, 0.5, 0.75, 1.0)",
+                                                                            value="",
+                                                                            rows=3,
+                                                                            className="form-control",
+                                                                        ),
+                                                                    ],
+                                                                    width=3,
+                                                                ),
+                                                            ],
+                                                            className="mb-3",
                                                         ),
                                                     ],
                                                     style={"display": "none"},
@@ -1139,15 +1228,33 @@ class BaselineCorrectionApp:
                 State("median-filter-window", "value"),
                 State("baseline-method", "value"),
                 State("normalization-method", "value"),
+                # IModPoly parameters
                 State("poly-order", "value"),
-                State("lambda-param", "value"),
-                State("frac", "value"),
+                State("tol", "value"),
+                State("max-iter", "value"),
+                State("use-original", "value"),
+                State("mask-initial-peaks", "value"),
                 State("num-std", "value"),
-                State("half-window", "value"),
+                # Quantile parameters
+                State("quantile-poly-order", "value"),
+                State("quantile", "value"),
+                State("quantile-tol", "value"),
+                State("quantile-max-iter", "value"),
+                State("eps", "value"),
+                # Rubberband parameters
                 State("segments", "value"),
                 State("rubberband-lam", "value"),
+                State("diff-order", "value"),
+                State("smooth-half-window", "value"),
+                # PSpline parameters
+                State("pspline-lam", "value"),
+                State("pspline-p", "value"),
                 State("num-knots", "value"),
                 State("spline-degree", "value"),
+                State("pspline-diff-order", "value"),
+                State("pspline-max-iter", "value"),
+                State("pspline-tol", "value"),
+                State("knot-positions", "value"),
             ],
             prevent_initial_call=True,
         )
@@ -1157,15 +1264,33 @@ class BaselineCorrectionApp:
             median_filter_window,
             baseline_method,
             normalization_method,
+            # IModPoly parameters
             poly_order,
-            lambda_param,
-            frac,
+            tol,
+            max_iter,
+            use_original,
+            mask_initial_peaks,
             num_std,
-            half_window,
+            # Quantile parameters
+            quantile_poly_order,
+            quantile,
+            quantile_tol,
+            quantile_max_iter,
+            eps,
+            # Rubberband parameters
             segments,
             rubberband_lam,
+            diff_order,
+            smooth_half_window,
+            # PSpline parameters
+            pspline_lam,
+            pspline_p,
             num_knots,
             spline_degree,
+            pspline_diff_order,
+            pspline_max_iter,
+            pspline_tol,
+            knot_positions,
         ):
             ctx = dash.callback_context
             if not ctx.triggered:
@@ -1182,16 +1307,50 @@ class BaselineCorrectionApp:
                         "median_filter_window": median_filter_window,
                         "baseline_method": baseline_method,
                         "normalization_method": normalization_method,
-                        "poly_order": poly_order,
-                        "lambda_param": lambda_param,
-                        "frac": frac,
-                        "num_std": num_std,
-                        "half_window": half_window,
-                        "segments": segments,
-                        "rubberband_lam": rubberband_lam,
-                        "num_knots": num_knots,
-                        "spline_degree": spline_degree,
                     }
+                    
+                    # Add method-specific parameters
+                    if baseline_method == "imodpoly":
+                        params.update({
+                            "poly_order": poly_order,
+                            "tol": tol,
+                            "max_iter": max_iter,
+                            "use_original": use_original,
+                            "mask_initial_peaks": mask_initial_peaks,
+                            "num_std": num_std,
+                        })
+                    elif baseline_method == "quantile":
+                        params.update({
+                            "poly_order": quantile_poly_order,
+                            "quantile": quantile,
+                            "tol": quantile_tol,
+                            "max_iter": quantile_max_iter,
+                            "eps": eps,
+                        })
+                    elif baseline_method == "rubberband":
+                        params.update({
+                            "segments": segments,
+                            "lam": rubberband_lam,
+                            "diff_order": diff_order,
+                            "smooth_half_window": smooth_half_window,
+                        })
+                    elif baseline_method == "pspline_asls":
+                        params.update({
+                            "lam": pspline_lam,
+                            "p": pspline_p,
+                            "num_knots": num_knots,
+                            "spline_degree": spline_degree,
+                            "diff_order": pspline_diff_order,
+                            "max_iter": pspline_max_iter,
+                            "tol": pspline_tol,
+                        })
+                        # Handle knot positions if provided
+                        if knot_positions and knot_positions.strip():
+                            try:
+                                knot_pos_list = [float(x.strip()) for x in knot_positions.split(",")]
+                                params["knot_positions"] = knot_pos_list
+                            except ValueError:
+                                print(f"Warning: Invalid knot positions format: {knot_positions}")
                     
                     # Filter out None values and other problematic values
                     filtered_params = {}
@@ -1331,22 +1490,20 @@ class BaselineCorrectionApp:
 
         @self.app.callback(
             [
-                Output("polynomial-params", "style"),
-                Output("loess-params", "style"),
-                Output("rolling-ball-params", "style"),
+                Output("imodpoly-params", "style"),
+                Output("quantile-params", "style"),
                 Output("rubberband-params", "style"),
                 Output("pspline-params", "style"),
             ],
             [Input("baseline-method", "value")],
         )
         def toggle_parameter_sections(baseline_method):
-            polynomial_style = {"display": "block"} if baseline_method in ["polynomial", "modpoly", "imodpoly", "penalized_poly"] else {"display": "none"}
-            loess_style = {"display": "block"} if baseline_method == "loess" else {"display": "none"}
-            rolling_ball_style = {"display": "block"} if baseline_method in ["rolling_ball", "morphological"] else {"display": "none"}
+            imodpoly_style = {"display": "block"} if baseline_method == "imodpoly" else {"display": "none"}
+            quantile_style = {"display": "block"} if baseline_method == "quantile" else {"display": "none"}
             rubberband_style = {"display": "block"} if baseline_method == "rubberband" else {"display": "none"}
-            pspline_style = {"display": "block"} if baseline_method.startswith("pspline_") else {"display": "none"}
+            pspline_style = {"display": "block"} if baseline_method == "pspline_asls" else {"display": "none"}
             
-            return polynomial_style, loess_style, rolling_ball_style, rubberband_style, pspline_style
+            return imodpoly_style, quantile_style, rubberband_style, pspline_style
 
 
 
