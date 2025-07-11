@@ -1223,7 +1223,6 @@ class BaselineCorrectionApp:
                     baseline_key = f"temp:baseline:{os.getpid()}:baseline"
 
                     status = self.redis_client.get(status_key)
-                    print(f"Redis status: {status}")  # Debug print
 
                     if status:
                         status = status.decode()
@@ -1233,16 +1232,9 @@ class BaselineCorrectionApp:
                                 corrected_data = self.redis_client.get(f"temp:baseline:{os.getpid()}:corrected")
                                 baseline_data = self.redis_client.get(f"temp:baseline:{os.getpid()}:baseline")
                                 
-                                print(f"Debug: corrected_data from Redis: {corrected_data is not None}")
-                                print(f"Debug: baseline_data from Redis: {baseline_data is not None}")
-                                
                                 if corrected_data and baseline_data:
                                     corrected_array = np.frombuffer(corrected_data)
                                     baseline_array = np.frombuffer(baseline_data)
-                                    
-                                    print(f"Debug: corrected_array size: {len(corrected_array)}")
-                                    print(f"Debug: baseline_array size: {len(baseline_array)}")
-                                    print(f"Debug: expected size: {self.data.shape[0] * self.data.shape[1]}")
                                     
                                     # Calculate the correct shape based on the array size
                                     if len(corrected_array) == self.data.shape[0] * self.data.shape[1]:
@@ -1255,13 +1247,9 @@ class BaselineCorrectionApp:
                                     # Store the data in memory for display
                                     self.corrected_data = corrected_array
                                     self.baseline_data = baseline_array
-                                    print(f"Loaded corrected data: {corrected_array.shape}")
-                                    print(f"Loaded baseline data: {baseline_array.shape}")
                                     
                             except Exception as e:
-                                print(f"Error loading corrected data: {str(e)}")
-                                import traceback
-                                traceback.print_exc()
+                                pass
                             
                             self._cleanup_redis_keys(os.getpid())
                             self.process = None
@@ -1283,7 +1271,7 @@ class BaselineCorrectionApp:
                                 False,
                             )
                         else:
-                            print(f"Unexpected status: {status}")
+                            pass
 
                     self.process = None
                     return ("Error in computation", True, "Run Baseline Correction", "danger", False)
@@ -1563,9 +1551,7 @@ class BaselineCorrectionApp:
                     
                     return f"Exported to tables: baseline_corrected_data, baseline_data"
                 else:
-                    # Debug: check what attributes are available
-                    available_attrs = [attr for attr in dir(self) if not attr.startswith('_')]
-                    return f"No corrected/baseline data available for export. Available attributes: {available_attrs}. Please run baseline correction first."
+                    return "No corrected/baseline data available for export. Please run baseline correction first."
                     
             except Exception as e:
                 return f"Error exporting data: {str(e)}"
