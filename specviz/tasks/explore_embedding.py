@@ -991,7 +991,7 @@ class ExploreEmbedding:
                 "wavenumbers",
                 "embedding",
                 "level_scale",
-                "measured_points",
+                "measured_data",
             ]
             
             # Add the selected data source to required tables
@@ -1009,9 +1009,9 @@ class ExploreEmbedding:
             embedding_df = read_df_from_db(conn, "embedding")
             level_scale_df = read_df_from_db(conn, "level_scale")
 
-            # Get HCD indices from measured_points table (which always has hcd_indx)
-            measured_points_df = read_df_from_db(conn, "measured_points")
-            measured_indices = measured_points_df["hcd_indx"].values
+            # Get HCD indices from measured_data table (which has the correct hcd_indx)
+            measured_data_df = read_df_from_db(conn, "measured_data")
+            measured_indices = measured_data_df["hcd_indx"].values
 
             # Get the maximum level for these points from HCD
             max_level = hcd_df.loc[measured_indices, "level"].max()
@@ -1033,7 +1033,10 @@ class ExploreEmbedding:
             )
 
             # Extract spectral data (skip index column)
-            spectra = spectral_data_df.iloc[:, 1:].values  # Skip index column
+            if "hcd_indx" in spectral_data_df.columns:
+                spectra = spectral_data_df.iloc[:, 1:].values  # Skip hcd_indx column
+            else:
+                spectra = spectral_data_df.values  # Use all columns for tables without hcd_indx
 
             # Get corresponding X, Y coordinates from HCD for our indices
             spatial_coords = hcd_df.loc[measured_indices, ["X", "Y"]]

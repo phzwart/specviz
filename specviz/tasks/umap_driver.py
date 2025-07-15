@@ -11,6 +11,7 @@ import numpy as np
 import umap
 from dash import Input, Output, State, dcc, html
 from dash.exceptions import PreventUpdate
+from scipy.signal import savgol_filter
 
 # Set start method only if not already set
 try:
@@ -21,6 +22,31 @@ try:
 except RuntimeError:
     # A start method has already been set, we'll use whatever it is
     pass
+
+
+def apply_savgol_filter(data: np.ndarray, window_length: int, polyorder: int, derivative: int = 0) -> np.ndarray:
+    """
+    Apply Savitzky-Golay filter to the data
+    
+    Args:
+        data: Input data array (n_samples, n_features)
+        window_length: Length of the filter window (must be odd)
+        polyorder: Order of the polynomial used to fit the samples
+        derivative: Order of the derivative to compute (0, 1, or 2)
+    
+    Returns:
+        Filtered data array
+    """
+    # Ensure window_length is odd
+    if window_length % 2 == 0:
+        window_length += 1
+    
+    # Apply Savitzky-Golay filter to each spectrum
+    filtered_data = np.zeros_like(data)
+    for i in range(data.shape[0]):
+        filtered_data[i] = savgol_filter(data[i], window_length, polyorder, deriv=derivative)
+    
+    return filtered_data
 
 
 class UMAPExportConnector(Protocol):
@@ -44,6 +70,14 @@ def run_umap_process(data, params, wavenumber_indices, result_queue):
 
     # Select only specified wavenumbers
     data_subset = data[:, wavenumber_indices]
+
+    # Apply Savitzky-Golay filtering if enabled
+    if params.get("use_savgol", False):
+        window_length = params.get("window_length", 11)
+        polyorder = params.get("polyorder", 3)
+        derivative = params.get("derivative", 0)
+        
+        data_subset = apply_savgol_filter(data_subset, window_length, polyorder, derivative)
 
     # Create UMAP parameters dict without the wavenumber selection
     umap_params = {
@@ -203,6 +237,79 @@ def create_umap_app(
                                 ],
                                 className="mb-3",
                             ),
+                            # Savitzky-Golay Filtering section
+                            dbc.Row(
+                                [
+                                    dbc.Col(
+                                        [
+                                            html.Label("Preprocessing:"),
+                                            dcc.Dropdown(
+                                                id="use-savgol",
+                                                options=[
+                                                    {"label": "No preprocessing", "value": False},
+                                                    {"label": "Savitzky-Golay filter", "value": True},
+                                                ],
+                                                value=False,
+                                                className="form-control",
+                                            ),
+                                        ]
+                                    ),
+                                ],
+                                className="mb-3",
+                            ),
+                            dbc.Row(
+                                [
+                                    dbc.Col(
+                                        [
+                                            html.Label("Derivative Order:"),
+                                            dcc.Dropdown(
+                                                id="derivative",
+                                                options=[
+                                                    {"label": "No derivative (smoothing only)", "value": 0},
+                                                    {"label": "First derivative", "value": 1},
+                                                    {"label": "Second derivative", "value": 2},
+                                                ],
+                                                value=0,
+                                                disabled=True,
+                                                className="form-control",
+                                            ),
+                                        ]
+                                    ),
+                                    dbc.Col(
+                                        [
+                                            html.Label("Window Length:"),
+                                            dcc.Input(
+                                                id="window-length",
+                                                type="number",
+                                                value=11,
+                                                min=3,
+                                                step=2,
+                                                disabled=True,
+                                                className="form-control",
+                                            ),
+                                            html.Small(
+                                                "Must be odd number",
+                                                className="text-muted",
+                                            ),
+                                        ]
+                                    ),
+                                    dbc.Col(
+                                        [
+                                            html.Label("Polynomial Order:"),
+                                            dcc.Input(
+                                                id="polyorder",
+                                                type="number",
+                                                value=3,
+                                                min=1,
+                                                max=6,
+                                                disabled=True,
+                                                className="form-control",
+                                            ),
+                                        ]
+                                    ),
+                                ],
+                                className="mb-3",
+                            ),
                             dbc.Row(
                                 [
                                     dbc.Col(
@@ -253,6 +360,33 @@ def create_umap_app(
 
     @app.callback(
         [
+            Output("derivative", "disabled"),
+            Output("window-length", "disabled"),
+            Output("polyorder", "disabled"),
+        ],
+        [Input("use-savgol", "value")],
+    )
+    def toggle_savgol_controls(use_savgol):
+        """Enable/disable Savitzky-Golay controls based on preprocessing selection"""
+        disabled = not use_savgol
+        return disabled, disabled, disabled
+
+    @app.callback(
+        Output("window-length", "value"),
+        [Input("window-length", "value")],
+        [State("use-savgol", "value")],
+    )
+    def ensure_odd_window_length(window_length, use_savgol):
+        """Ensure window length is always odd"""
+        if not use_savgol or window_length is None:
+            raise PreventUpdate
+        
+        if window_length % 2 == 0:
+            return window_length + 1
+        return window_length
+
+    @app.callback(
+        [
             Output("umap-plot", "figure"),
             Output("export-button", "disabled"),
             Output("umap-params-store", "data"),
@@ -266,6 +400,10 @@ def create_umap_app(
             State("distance-metric", "value"),
             State("densmap", "value"),
             State("wavenumber-ranges", "value"),
+            State("use-savgol", "value"),
+            State("derivative", "value"),
+            State("window-length", "value"),
+            State("polyorder", "value"),
             State("computation-status", "data"),
         ],
     )
@@ -277,6 +415,10 @@ def create_umap_app(
         metric,
         densmap,
         wavenumber_ranges,
+        use_savgol,
+        derivative,
+        window_length,
+        polyorder,
         status,
     ):
         ctx = dash.callback_context
@@ -288,13 +430,31 @@ def create_umap_app(
                 wavenumber_ranges, app.wavenumbers
             )
 
-            # Store all parameters including wavenumber selection
+            # Validate Savitzky-Golay parameters
+            if use_savgol:
+                if window_length is None or window_length < 3:
+                    print("Warning: Window length must be at least 3")
+                    return dash.no_update, True, dash.no_update, "idle", "danger"
+                
+                if polyorder is None or polyorder < 1 or polyorder >= window_length:
+                    print("Warning: Polynomial order must be >= 1 and < window_length")
+                    return dash.no_update, True, dash.no_update, "idle", "danger"
+                
+                if derivative is None or derivative < 0 or derivative > 2:
+                    print("Warning: Derivative order must be 0, 1, or 2")
+                    return dash.no_update, True, dash.no_update, "idle", "danger"
+
+            # Store all parameters including wavenumber selection and Savitzky-Golay settings
             params = {
                 "n_neighbors": n_neighbors,
                 "min_dist": min_dist,
                 "metric": metric,
                 "densmap": densmap,
                 "selected_wavenumbers": wavenumber_indices.tolist(),  # Store for reference
+                "use_savgol": use_savgol,
+                "derivative": derivative,
+                "window_length": window_length,
+                "polyorder": polyorder,
             }
             app.current_params = params
 

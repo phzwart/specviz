@@ -31,4 +31,7 @@ psutil>=5.9.0
 einops>=0.6.0
 
 # External dependencies
-hiposa>=0.1.0 
+hiposa>=0.1.0
+
+# Baseline correction
+pybaselines>=0.7.0 

@@ -423,6 +423,8 @@ def baseline_correction_runner(
         baseline_method = params.get("baseline_method", "polynomial")
         normalization_method = params.get("normalization_method", "none")
         median_filter_window = params.get("median_filter_window", None)
+        second_baseline_method = params.get("second_baseline_method", "none")
+        second_normalization_method = params.get("second_normalization_method", "none")
         
         # Get baseline parameters based on method - use the same smart filtering as apply_baseline_correction
         baseline_params = {}
@@ -528,6 +530,81 @@ def baseline_correction_runner(
             print(f"Applying normalization with method: {normalization_method}")
             corrected_data = apply_normalization(corrected_data, normalization_method)
             print(f"Applied normalization. Final data shape: {corrected_data.shape}")
+
+        # Apply second baseline correction if specified
+        if second_baseline_method != "none":
+            print(f"Applying second baseline correction with method: {second_baseline_method}")
+            
+            # Get second baseline parameters
+            second_baseline_params = {}
+            if second_baseline_method in method_configs:
+                accepted_params = method_configs[second_baseline_method]
+                
+                # Only include parameters that are accepted by this method
+                for param in accepted_params:
+                    second_param_name = f"second_{param}"
+                    value = params.get(second_param_name, defaults.get(param))
+                    if value is not None and not isinstance(value, dict):
+                        second_baseline_params[param] = value
+                
+                # Special mapping for second rubberband method
+                if second_baseline_method == "rubberband" and "second_rubberband_lam" in params:
+                    second_baseline_params["lam"] = params["second_rubberband_lam"]
+                
+                # Special mapping for second methods that use 'lam' instead of 'lambda_param'
+                lam_methods = ["mpls", "arpls", "asls", "iasls", "psalsa", "drpls", "iarpls", "aspls", 
+                              "pspline_asls", "pspline_iasls", "pspline_arpls", "pspline_iarpls", 
+                              "pspline_psalsa", "pspline_drpls", "pspline_aspls"]
+                if second_baseline_method in lam_methods and "second_lambda_param" in params:
+                    second_baseline_params["lam"] = params["second_lambda_param"]
+            
+            # Additional safety check: ensure all values are numeric for second correction
+            safe_second_baseline_params = {}
+            for k, v in second_baseline_params.items():
+                try:
+                    # Special handling for interp_pts method
+                    if second_baseline_method == "interp_pts":
+                        if k == "baseline_points":
+                            # baseline_points should be a list of [x, y] pairs
+                            safe_second_baseline_params[k] = v
+                        elif k == "interp_method":
+                            # interp_method should be a string
+                            safe_second_baseline_params[k] = str(v)
+                        else:
+                            # Skip other parameters for interp_pts
+                            print(f"Warning: Skipping unknown parameter {k}={v} for second interp_pts method")
+                    else:
+                        # Convert to appropriate type based on parameter for other methods
+                        if k in ["poly_order", "max_iter", "num_knots", "spline_degree", "half_window", "segments", "diff_order", "smooth_half_window"]:
+                            # These should be integers
+                            int_val = int(float(v))
+                            safe_second_baseline_params[k] = int_val
+                        else:
+                            # These should be floats
+                            float_val = float(v)
+                            safe_second_baseline_params[k] = float_val
+                except (ValueError, TypeError):
+                    print(f"Warning: Skipping non-numeric parameter {k}={v} (type: {type(v)}) for second correction")
+            
+            print(f"Second baseline parameters: {safe_second_baseline_params}")
+            
+            # Apply second baseline correction to the already corrected data
+            second_corrected_data, second_baseline_data, second_consecutive_failures = apply_baseline_correction(
+                corrected_data, wavenumbers, second_baseline_method, **safe_second_baseline_params
+            )
+            
+            print(f"Applied second baseline correction. Second corrected data shape: {second_corrected_data.shape}")
+            
+            # Apply second normalization if specified
+            if second_normalization_method != "none":
+                print(f"Applying second normalization with method: {second_normalization_method}")
+                second_corrected_data = apply_normalization(second_corrected_data, second_normalization_method)
+                print(f"Applied second normalization. Final data shape: {second_corrected_data.shape}")
+            
+            # Use the second corrected data as the final result
+            corrected_data = second_corrected_data
+            # Combine the baseline data (add the second baseline to the first)
+            baseline_data = baseline_data + second_baseline_data
 
         # Store results in Redis
         r.set(corrected_key, corrected_data.tobytes())
@@ -1232,6 +1309,546 @@ class BaselineCorrectionApp:
                     className="mb-4",
                 ),
 
+                # Second Baseline Correction Parameters (Post-processing)
+                dbc.Row(
+                    [
+                        dbc.Col(
+                            [
+                                dbc.Card(
+                                    [
+                                        dbc.CardHeader("Second Baseline Correction (Post-processing)"),
+                                        dbc.CardBody(
+                                            [
+                                                html.H6("Post-processing Baseline Correction", className="mb-3"),
+                                                html.Small("Apply a second baseline correction to the already corrected spectrum", className="text-muted mb-3"),
+                                                dbc.Row(
+                                                    [
+                                                        dbc.Col(
+                                                            [
+                                                                html.Label("Second Baseline Method:"),
+                                                                dcc.Dropdown(
+                                                                    id="second-baseline-method",
+                                                                    options=[
+                                                                        {"label": "None", "value": "none"},
+                                                                        {"label": "Iterative Modified Polynomial", "value": "imodpoly"},
+                                                                        {"label": "Quantile", "value": "quantile"},
+                                                                        {"label": "Rubberband", "value": "rubberband"},
+                                                                        {"label": "PSpline ARPLS", "value": "pspline_arpls"},
+                                                                        {"label": "Interpolate Points (Manual)", "value": "interp_pts"},
+                                                                    ],
+                                                                    value="none",
+                                                                    className="mb-3",
+                                                                ),
+                                                            ],
+                                                            width=6,
+                                                        ),
+                                                        dbc.Col(
+                                                            [
+                                                                html.Label("Second Normalization Method:"),
+                                                                dcc.Dropdown(
+                                                                    id="second-normalization-method",
+                                                                    options=[
+                                                                        {"label": "None", "value": "none"},
+                                                                        {"label": "Min-Max", "value": "min_max"},
+                                                                        {"label": "Z-Score", "value": "z_score"},
+                                                                        {"label": "SNV", "value": "snv"},
+                                                                        {"label": "Area", "value": "area"},
+                                                                        {"label": "Vector", "value": "vector"},
+                                                                    ],
+                                                                    value="none",
+                                                                    className="mb-3",
+                                                                ),
+                                                            ],
+                                                            width=6,
+                                                        ),
+                                                    ]
+                                                ),
+                                                
+                                                # Second IModPoly parameters
+                                                html.Div(
+                                                    id="second-imodpoly-params",
+                                                    children=[
+                                                        dbc.Row(
+                                                            [
+                                                                dbc.Col(
+                                                                    [
+                                                                        html.Label("Polynomial Order:"),
+                                                                        dcc.Input(
+                                                                            id="second-poly-order",
+                                                                            type="number",
+                                                                            value=2,
+                                                                            min=1,
+                                                                            max=10,
+                                                                            className="form-control",
+                                                                        ),
+                                                                    ],
+                                                                    width=4,
+                                                                ),
+                                                                dbc.Col(
+                                                                    [
+                                                                        html.Label("Tolerance:"),
+                                                                        dcc.Input(
+                                                                            id="second-tol",
+                                                                            type="number",
+                                                                            value=0.001,
+                                                                            min=0.0001,
+                                                                            max=0.1,
+                                                                            step=0.0001,
+                                                                            className="form-control",
+                                                                        ),
+                                                                    ],
+                                                                    width=4,
+                                                                ),
+                                                                dbc.Col(
+                                                                    [
+                                                                        html.Label("Max Iterations:"),
+                                                                        dcc.Input(
+                                                                            id="second-max-iter",
+                                                                            type="number",
+                                                                            value=100,
+                                                                            min=10,
+                                                                            max=1000,
+                                                                            className="form-control",
+                                                                        ),
+                                                                    ],
+                                                                    width=4,
+                                                                ),
+                                                            ],
+                                                            className="mb-3",
+                                                        ),
+                                                        dbc.Row(
+                                                            [
+                                                                dbc.Col(
+                                                                    [
+                                                                        html.Label("Use Original:"),
+                                                                        dcc.Dropdown(
+                                                                            id="second-use-original",
+                                                                            options=[
+                                                                                {"label": "True", "value": True},
+                                                                                {"label": "False", "value": False},
+                                                                            ],
+                                                                            value=True,
+                                                                            className="form-control",
+                                                                        ),
+                                                                    ],
+                                                                    width=4,
+                                                                ),
+                                                                dbc.Col(
+                                                                    [
+                                                                        html.Label("Mask Initial Peaks:"),
+                                                                        dcc.Dropdown(
+                                                                            id="second-mask-initial-peaks",
+                                                                            options=[
+                                                                                {"label": "True", "value": True},
+                                                                                {"label": "False", "value": False},
+                                                                            ],
+                                                                            value=False,
+                                                                            className="form-control",
+                                                                        ),
+                                                                    ],
+                                                                    width=4,
+                                                                ),
+                                                                dbc.Col(
+                                                                    [
+                                                                        html.Label("Number of Std Devs:"),
+                                                                        dcc.Input(
+                                                                            id="second-num-std",
+                                                                            type="number",
+                                                                            value=2.0,
+                                                                            min=0.1,
+                                                                            max=10.0,
+                                                                            step=0.1,
+                                                                            className="form-control",
+                                                                        ),
+                                                                    ],
+                                                                    width=4,
+                                                                ),
+                                                            ],
+                                                            className="mb-3",
+                                                        ),
+                                                    ],
+                                                    style={"display": "none"},
+                                                ),
+                                                
+                                                # Second Quantile parameters
+                                                html.Div(
+                                                    id="second-quantile-params",
+                                                    children=[
+                                                        dbc.Row(
+                                                            [
+                                                                dbc.Col(
+                                                                    [
+                                                                        html.Label("Polynomial Order:"),
+                                                                        dcc.Input(
+                                                                            id="second-quantile-poly-order",
+                                                                            type="number",
+                                                                            value=2,
+                                                                            min=1,
+                                                                            max=10,
+                                                                            className="form-control",
+                                                                        ),
+                                                                    ],
+                                                                    width=3,
+                                                                ),
+                                                                dbc.Col(
+                                                                    [
+                                                                        html.Label("Quantile:"),
+                                                                        dcc.Input(
+                                                                            id="second-quantile",
+                                                                            type="number",
+                                                                            value=0.1,
+                                                                            min=0.01,
+                                                                            max=0.5,
+                                                                            step=0.01,
+                                                                            className="form-control",
+                                                                        ),
+                                                                    ],
+                                                                    width=3,
+                                                                ),
+                                                                dbc.Col(
+                                                                    [
+                                                                        html.Label("Tolerance:"),
+                                                                        dcc.Input(
+                                                                            id="second-quantile-tol",
+                                                                            type="number",
+                                                                            value=0.001,
+                                                                            min=0.0001,
+                                                                            max=0.1,
+                                                                            step=0.0001,
+                                                                            className="form-control",
+                                                                        ),
+                                                                    ],
+                                                                    width=3,
+                                                                ),
+                                                                dbc.Col(
+                                                                    [
+                                                                        html.Label("Max Iterations:"),
+                                                                        dcc.Input(
+                                                                            id="second-quantile-max-iter",
+                                                                            type="number",
+                                                                            value=100,
+                                                                            min=10,
+                                                                            max=1000,
+                                                                            className="form-control",
+                                                                        ),
+                                                                    ],
+                                                                    width=3,
+                                                                ),
+                                                            ],
+                                                            className="mb-3",
+                                                        ),
+                                                        dbc.Row(
+                                                            [
+                                                                dbc.Col(
+                                                                    [
+                                                                        html.Label("Epsilon:"),
+                                                                        dcc.Input(
+                                                                            id="second-eps",
+                                                                            type="number",
+                                                                            value=1e-8,
+                                                                            min=1e-10,
+                                                                            max=1e-5,
+                                                                            step=1e-9,
+                                                                            className="form-control",
+                                                                        ),
+                                                                    ],
+                                                                    width=4,
+                                                                ),
+                                                            ],
+                                                            className="mb-3",
+                                                        ),
+                                                    ],
+                                                    style={"display": "none"},
+                                                ),
+                                                
+                                                # Second Rubberband parameters
+                                                html.Div(
+                                                    id="second-rubberband-params",
+                                                    children=[
+                                                        dbc.Row(
+                                                            [
+                                                                dbc.Col(
+                                                                    [
+                                                                        html.Label("Segments:"),
+                                                                        dcc.Input(
+                                                                            id="second-segments",
+                                                                            type="number",
+                                                                            value=1,
+                                                                            min=1,
+                                                                            max=10,
+                                                                            className="form-control",
+                                                                        ),
+                                                                    ],
+                                                                    width=3,
+                                                                ),
+                                                                dbc.Col(
+                                                                    [
+                                                                        html.Label("Lambda:"),
+                                                                        dcc.Input(
+                                                                            id="second-rubberband-lam",
+                                                                            type="number",
+                                                                            value=1000.0,
+                                                                            step=100.0,
+                                                                            className="form-control",
+                                                                        ),
+                                                                    ],
+                                                                    width=3,
+                                                                ),
+                                                                dbc.Col(
+                                                                    [
+                                                                        html.Label("Diff Order:"),
+                                                                        dcc.Input(
+                                                                            id="second-diff-order",
+                                                                            type="number",
+                                                                            value=2,
+                                                                            min=1,
+                                                                            max=4,
+                                                                            className="form-control",
+                                                                        ),
+                                                                    ],
+                                                                    width=3,
+                                                                ),
+                                                                dbc.Col(
+                                                                    [
+                                                                        html.Label("Smooth Half Window:"),
+                                                                        dcc.Input(
+                                                                            id="second-smooth-half-window",
+                                                                            type="number",
+                                                                            value=1,
+                                                                            min=1,
+                                                                            max=100,
+                                                                            className="form-control",
+                                                                        ),
+                                                                    ],
+                                                                    width=3,
+                                                                ),
+                                                            ],
+                                                            className="mb-3",
+                                                        ),
+                                                    ],
+                                                    style={"display": "none"},
+                                                ),
+                                                
+                                                # Second PSpline ARPLS parameters
+                                                html.Div(
+                                                    id="second-pspline-params",
+                                                    children=[
+                                                        dbc.Row(
+                                                            [
+                                                                dbc.Col(
+                                                                    [
+                                                                        html.Label("Lambda:"),
+                                                                        dcc.Input(
+                                                                            id="second-pspline-lam",
+                                                                            type="number",
+                                                                            value=1000.0,
+                                                                            step=100.0,
+                                                                            className="form-control",
+                                                                        ),
+                                                                    ],
+                                                                    width=4,
+                                                                ),
+                                                                dbc.Col(
+                                                                    [
+                                                                        html.Label("Number of Knots:"),
+                                                                        dcc.Input(
+                                                                            id="second-num-knots",
+                                                                            type="number",
+                                                                            value=100,
+                                                                            min=10,
+                                                                            max=1000,
+                                                                            className="form-control",
+                                                                        ),
+                                                                    ],
+                                                                    width=4,
+                                                                ),
+                                                                dbc.Col(
+                                                                    [
+                                                                        html.Label("Spline Degree:"),
+                                                                        dcc.Input(
+                                                                            id="second-spline-degree",
+                                                                            type="number",
+                                                                            value=3,
+                                                                            min=1,
+                                                                            max=5,
+                                                                            className="form-control",
+                                                                        ),
+                                                                    ],
+                                                                    width=4,
+                                                                ),
+                                                            ],
+                                                            className="mb-3",
+                                                        ),
+                                                        dbc.Row(
+                                                            [
+                                                                dbc.Col(
+                                                                    [
+                                                                        html.Label("Diff Order:"),
+                                                                        dcc.Input(
+                                                                            id="second-pspline-diff-order",
+                                                                            type="number",
+                                                                            value=2,
+                                                                            min=1,
+                                                                            max=4,
+                                                                            className="form-control",
+                                                                        ),
+                                                                    ],
+                                                                    width=3,
+                                                                ),
+                                                                dbc.Col(
+                                                                    [
+                                                                        html.Label("Max Iterations:"),
+                                                                        dcc.Input(
+                                                                            id="second-pspline-max-iter",
+                                                                            type="number",
+                                                                            value=100,
+                                                                            min=10,
+                                                                            max=1000,
+                                                                            className="form-control",
+                                                                        ),
+                                                                    ],
+                                                                    width=3,
+                                                                ),
+                                                                dbc.Col(
+                                                                    [
+                                                                        html.Label("Tolerance:"),
+                                                                        dcc.Input(
+                                                                            id="second-pspline-tol",
+                                                                            type="number",
+                                                                            value=0.001,
+                                                                            min=0.0001,
+                                                                            max=0.1,
+                                                                            step=0.0001,
+                                                                            className="form-control",
+                                                                        ),
+                                                                    ],
+                                                                    width=3,
+                                                                ),
+                                                                dbc.Col(
+                                                                    [
+                                                                        html.Label("Predefined Knot Sets:"),
+                                                                        dcc.Dropdown(
+                                                                            id="second-knot-presets",
+                                                                            options=[
+                                                                                {"label": "Custom", "value": "custom"},
+                                                                                {"label": "Uniform (5 knots)", "value": "uniform_5"},
+                                                                                {"label": "Uniform (10 knots)", "value": "uniform_10"},
+                                                                                {"label": "Uniform (20 knots)", "value": "uniform_20"},
+                                                                                {"label": "Dense (50 knots)", "value": "dense_50"},
+                                                                                {"label": "Sparse (3 knots)", "value": "sparse_3"},
+                                                                                {"label": "Logarithmic (10 knots)", "value": "log_10"},
+                                                                            ],
+                                                                            value="uniform_10",
+                                                                            className="form-control",
+                                                                        ),
+                                                                    ],
+                                                                    width=3,
+                                                                ),
+                                                            ],
+                                                            className="mb-3",
+                                                        ),
+                                                        dbc.Row(
+                                                            [
+                                                                dbc.Col(
+                                                                    [
+                                                                        html.Label("Custom Knot Positions:"),
+                                                                        dcc.Textarea(
+                                                                            id="second-knot-positions",
+                                                                            placeholder="Enter custom knot positions as comma-separated values (e.g., 0, 0.25, 0.5, 0.75, 1.0)",
+                                                                            value="",
+                                                                            rows=3,
+                                                                            className="form-control",
+                                                                        ),
+                                                                        html.Small("Leave empty to use predefined set", className="text-muted"),
+                                                                    ],
+                                                                    width=12,
+                                                                ),
+                                                            ],
+                                                            className="mb-3",
+                                                        ),
+                                                    ],
+                                                    style={"display": "none"},
+                                                ),
+                                                
+                                                # Second Interpolate Points parameters
+                                                html.Div(
+                                                    id="second-interp-params",
+                                                    children=[
+                                                        dbc.Row(
+                                                            [
+                                                                dbc.Col(
+                                                                    [
+                                                                        html.Label("Interpolation Method:"),
+                                                                        dcc.Dropdown(
+                                                                            id="second-interp-method",
+                                                                            options=[
+                                                                                {"label": "Linear", "value": "linear"},
+                                                                                {"label": "Cubic", "value": "cubic"},
+                                                                                {"label": "Quadratic", "value": "quadratic"},
+                                                                                {"label": "Nearest", "value": "nearest"},
+                                                                                {"label": "Previous", "value": "previous"},
+                                                                                {"label": "Next", "value": "next"},
+                                                                            ],
+                                                                            value="linear",
+                                                                            className="form-control",
+                                                                        ),
+                                                                    ],
+                                                                    width=6,
+                                                                ),
+                                                                dbc.Col(
+                                                                    [
+                                                                        html.Label("Flat Region Wavenumbers:"),
+                                                                        dcc.Textarea(
+                                                                            id="second-baseline-points",
+                                                                            placeholder="Enter wavenumbers where baseline should be flat (e.g., 100,200,300,400)",
+                                                                            value="",
+                                                                            rows=4,
+                                                                            className="form-control",
+                                                                        ),
+                                                                        html.Small("Format: comma-separated wavenumbers where baseline should be flat", className="text-muted"),
+                                                                    ],
+                                                                    width=6,
+                                                                ),
+                                                            ],
+                                                            className="mb-3",
+                                                        ),
+                                                        dbc.Row(
+                                                            [
+                                                                dbc.Col(
+                                                                    [
+                                                                        html.Label("Preset Flat Regions:"),
+                                                                        dcc.Dropdown(
+                                                                            id="second-flat-region-presets",
+                                                                            options=[
+                                                                                {"label": "Custom Wavenumbers", "value": "custom"},
+                                                                                {"label": "Auto-Detect Minima", "value": "auto_minima"},
+                                                                                {"label": "Quarter Points", "value": "quarter_points"},
+                                                                                {"label": "Third Points", "value": "third_points"},
+                                                                                {"label": "Start and End Only", "value": "start_end"},
+                                                                            ],
+                                                                            value="start_end",
+                                                                            className="form-control",
+                                                                        ),
+                                                                    ],
+                                                                    width=12,
+                                                                ),
+                                                            ],
+                                                            className="mb-3",
+                                                        ),
+                                                    ],
+                                                    style={"display": "none"},
+                                                ),
+                                            ]
+                                        ),
+                                    ]
+                                )
+                            ],
+                            width=12,
+                        )
+                    ],
+                    className="mb-4",
+                ),
+
                 # Run Button and Status
                 dbc.Row(
                     [
@@ -1382,6 +1999,40 @@ class BaselineCorrectionApp:
                 State("interp-method", "value"),
                 State("baseline-points", "value"),
                 State("flat-region-presets", "value"),
+                # Second Baseline Correction parameters
+                State("second-baseline-method", "value"),
+                State("second-normalization-method", "value"),
+                # Second IModPoly parameters
+                State("second-poly-order", "value"),
+                State("second-tol", "value"),
+                State("second-max-iter", "value"),
+                State("second-use-original", "value"),
+                State("second-mask-initial-peaks", "value"),
+                State("second-num-std", "value"),
+                # Second Quantile parameters
+                State("second-quantile-poly-order", "value"),
+                State("second-quantile", "value"),
+                State("second-quantile-tol", "value"),
+                State("second-quantile-max-iter", "value"),
+                State("second-eps", "value"),
+                # Second Rubberband parameters
+                State("second-segments", "value"),
+                State("second-rubberband-lam", "value"),
+                State("second-diff-order", "value"),
+                State("second-smooth-half-window", "value"),
+                # Second PSpline parameters
+                State("second-pspline-lam", "value"),
+                State("second-num-knots", "value"),
+                State("second-spline-degree", "value"),
+                State("second-pspline-diff-order", "value"),
+                State("second-pspline-max-iter", "value"),
+                State("second-pspline-tol", "value"),
+                State("second-knot-presets", "value"),
+                State("second-knot-positions", "value"),
+                # Second Interpolate Points parameters
+                State("second-interp-method", "value"),
+                State("second-baseline-points", "value"),
+                State("second-flat-region-presets", "value"),
             ],
             prevent_initial_call=True,
         )
@@ -1422,6 +2073,40 @@ class BaselineCorrectionApp:
             interp_method,
             baseline_points,
             flat_region_presets,
+            # Second Baseline Correction parameters
+            second_baseline_method,
+            second_normalization_method,
+            # Second IModPoly parameters
+            second_poly_order,
+            second_tol,
+            second_max_iter,
+            second_use_original,
+            second_mask_initial_peaks,
+            second_num_std,
+            # Second Quantile parameters
+            second_quantile_poly_order,
+            second_quantile,
+            second_quantile_tol,
+            second_quantile_max_iter,
+            second_eps,
+            # Second Rubberband parameters
+            second_segments,
+            second_rubberband_lam,
+            second_diff_order,
+            second_smooth_half_window,
+            # Second PSpline parameters
+            second_pspline_lam,
+            second_num_knots,
+            second_spline_degree,
+            second_pspline_diff_order,
+            second_pspline_max_iter,
+            second_pspline_tol,
+            second_knot_presets,
+            second_knot_positions,
+            # Second Interpolate Points parameters
+            second_interp_method,
+            second_baseline_points,
+            second_flat_region_presets,
         ):
             ctx = dash.callback_context
             if not ctx.triggered:
@@ -1438,6 +2123,8 @@ class BaselineCorrectionApp:
                         "median_filter_window": median_filter_window,
                         "baseline_method": baseline_method,
                         "normalization_method": normalization_method,
+                        "second_baseline_method": second_baseline_method,
+                        "second_normalization_method": second_normalization_method,
                     }
                     
                     # Add method-specific parameters
@@ -1523,14 +2210,21 @@ class BaselineCorrectionApp:
                                 actual_wavenumbers = [self.wavenumbers[idx] for idx in wavenumber_indices]
                                 
                                 # Calculate baseline intensities as the minimum value in each region
-                                # For now, use a simple approach: take the minimum of the data
+                                # Use a more robust approach: take the minimum of the data, but ensure it's not too negative
                                 baseline_intensities = []
                                 for idx in wavenumber_indices:
                                     # Use the minimum value in a small window around this point
                                     window_start = max(0, idx - 5)
                                     window_end = min(len(self.data[0]), idx + 6)
                                     min_intensity = np.min(self.data[:, window_start:window_end])
-                                    baseline_intensities.append(min_intensity)
+                                    
+                                    # Ensure the baseline is not too negative - cap it at 0 or a small negative value
+                                    if min_intensity < -0.1:  # If the minimum is very negative
+                                        # Use the 10th percentile instead, or cap at -0.05
+                                        percentile_intensity = np.percentile(self.data[:, window_start:window_end], 10)
+                                        baseline_intensities.append(max(percentile_intensity, -0.05))
+                                    else:
+                                        baseline_intensities.append(min_intensity)
                                 
                                 # Create baseline points
                                 points_list = []
@@ -1540,16 +2234,23 @@ class BaselineCorrectionApp:
                                 # Add start and end points if not already included
                                 if len(points_list) == 0:
                                     # No custom points, use default
-                                    points_list = [[self.wavenumbers[0], np.min(self.data)], [self.wavenumbers[-1], np.min(self.data)]]
+                                    min_data = np.min(self.data)
+                                    if min_data < -0.1:
+                                        min_data = max(np.percentile(self.data, 10), -0.05)
+                                    points_list = [[self.wavenumbers[0], min_data], [self.wavenumbers[-1], min_data]]
                                 else:
                                     # Add start point if not already there
                                     if points_list[0][0] > self.wavenumbers[0]:
                                         start_intensity = np.min(self.data[:, :10])  # Use first 10 points
+                                        if start_intensity < -0.1:
+                                            start_intensity = max(np.percentile(self.data[:, :10], 10), -0.05)
                                         points_list.insert(0, [self.wavenumbers[0], start_intensity])
                                     
                                     # Add end point if not already there
                                     if points_list[-1][0] < self.wavenumbers[-1]:
                                         end_intensity = np.min(self.data[:, -10:])  # Use last 10 points
+                                        if end_intensity < -0.1:
+                                            end_intensity = max(np.percentile(self.data[:, -10:], 10), -0.05)
                                         points_list.append([self.wavenumbers[-1], end_intensity])
                                 
                                 params["baseline_points"] = points_list
@@ -1578,12 +2279,27 @@ class BaselineCorrectionApp:
                                     points_list = []
                                     for idx in minima_indices:
                                         wavenumber = self.wavenumbers[idx]
-                                        intensity = np.min(self.data[:, max(0, idx-5):min(len(self.data[0]), idx+6)])
+                                        window_start = max(0, idx-5)
+                                        window_end = min(len(self.data[0]), idx+6)
+                                        min_intensity = np.min(self.data[:, window_start:window_end])
+                                        
+                                        # Ensure the baseline is not too negative
+                                        if min_intensity < -0.1:
+                                            percentile_intensity = np.percentile(self.data[:, window_start:window_end], 10)
+                                            intensity = max(percentile_intensity, -0.05)
+                                        else:
+                                            intensity = min_intensity
+                                        
                                         points_list.append([wavenumber, intensity])
                                     
                                     # Add start and end points
                                     start_intensity = np.min(self.data[:, :10])
+                                    if start_intensity < -0.1:
+                                        start_intensity = max(np.percentile(self.data[:, :10], 10), -0.05)
+                                    
                                     end_intensity = np.min(self.data[:, -10:])
+                                    if end_intensity < -0.1:
+                                        end_intensity = max(np.percentile(self.data[:, -10:], 10), -0.05)
                                     points_list.insert(0, [self.wavenumbers[0], start_intensity])
                                     points_list.append([self.wavenumbers[-1], end_intensity])
                                     
@@ -1600,7 +2316,15 @@ class BaselineCorrectionApp:
                                     wavenumber = self.wavenumbers[idx]
                                     window_start = max(0, idx - 5)
                                     window_end = min(len(self.data[0]), idx + 6)
-                                    intensity = np.min(self.data[:, window_start:window_end])
+                                    min_intensity = np.min(self.data[:, window_start:window_end])
+                                    
+                                    # Ensure the baseline is not too negative
+                                    if min_intensity < -0.1:
+                                        percentile_intensity = np.percentile(self.data[:, window_start:window_end], 10)
+                                        intensity = max(percentile_intensity, -0.05)
+                                    else:
+                                        intensity = min_intensity
+                                    
                                     points_list.append([wavenumber, intensity])
                                 
                                 params["baseline_points"] = points_list
@@ -1613,7 +2337,15 @@ class BaselineCorrectionApp:
                                     wavenumber = self.wavenumbers[idx]
                                     window_start = max(0, idx - 5)
                                     window_end = min(len(self.data[0]), idx + 6)
-                                    intensity = np.min(self.data[:, window_start:window_end])
+                                    min_intensity = np.min(self.data[:, window_start:window_end])
+                                    
+                                    # Ensure the baseline is not too negative
+                                    if min_intensity < -0.1:
+                                        percentile_intensity = np.percentile(self.data[:, window_start:window_end], 10)
+                                        intensity = max(percentile_intensity, -0.05)
+                                    else:
+                                        intensity = min_intensity
+                                    
                                     points_list.append([wavenumber, intensity])
                                 
                                 params["baseline_points"] = points_list
@@ -1621,7 +2353,13 @@ class BaselineCorrectionApp:
                             elif flat_region_presets == "start_end":
                                 # Just start and end points
                                 start_intensity = np.min(self.data[:, :10])
+                                if start_intensity < -0.1:
+                                    start_intensity = max(np.percentile(self.data[:, :10], 10), -0.05)
+                                
                                 end_intensity = np.min(self.data[:, -10:])
+                                if end_intensity < -0.1:
+                                    end_intensity = max(np.percentile(self.data[:, -10:], 10), -0.05)
+                                
                                 params["baseline_points"] = [[self.wavenumbers[0], start_intensity], [self.wavenumbers[-1], end_intensity]]
                                 
                             else:
@@ -1629,6 +2367,256 @@ class BaselineCorrectionApp:
                                 params["baseline_points"] = [[self.wavenumbers[0], np.min(self.data)], [self.wavenumbers[-1], np.min(self.data)]]
                             
                             print(f"Using preset flat region: {flat_region_presets}")
+                    
+                    # Add second baseline correction parameters
+                    if second_baseline_method == "imodpoly":
+                        params.update({
+                            "second_poly_order": second_poly_order,
+                            "second_tol": second_tol,
+                            "second_max_iter": second_max_iter,
+                            "second_use_original": second_use_original,
+                            "second_mask_initial_peaks": second_mask_initial_peaks,
+                            "second_num_std": second_num_std,
+                        })
+                    elif second_baseline_method == "quantile":
+                        params.update({
+                            "second_poly_order": second_quantile_poly_order,
+                            "second_quantile": second_quantile,
+                            "second_tol": second_quantile_tol,
+                            "second_max_iter": second_quantile_max_iter,
+                            "second_eps": second_eps,
+                        })
+                    elif second_baseline_method == "rubberband":
+                        params.update({
+                            "second_segments": second_segments,
+                            "second_lam": second_rubberband_lam,
+                            "second_diff_order": second_diff_order,
+                            "second_smooth_half_window": second_smooth_half_window,
+                        })
+                    elif second_baseline_method == "pspline_arpls":
+                        params.update({
+                            "second_lam": second_pspline_lam,
+                            "second_num_knots": second_num_knots,
+                            "second_spline_degree": second_spline_degree,
+                            "second_diff_order": second_pspline_diff_order,
+                            "second_max_iter": second_pspline_max_iter,
+                            "second_tol": second_pspline_tol,
+                        })
+                        
+                        # Handle second knot positions
+                        if second_knot_positions and second_knot_positions.strip():
+                            # Use custom knot positions
+                            try:
+                                knot_pos_list = [float(x.strip()) for x in second_knot_positions.split(",")]
+                                params["second_knot_positions"] = knot_pos_list
+                            except ValueError:
+                                print(f"Warning: Invalid second knot positions format: {second_knot_positions}")
+                        else:
+                            # Use predefined knot sets
+                            knot_presets_map = {
+                                "uniform_5": [0.0, 0.25, 0.5, 0.75, 1.0],
+                                "uniform_10": [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
+                                "uniform_20": [i/20.0 for i in range(21)],
+                                "dense_50": [i/50.0 for i in range(51)],
+                                "sparse_3": [0.0, 0.5, 1.0],
+                                "log_10": [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
+                            }
+                            
+                            if second_knot_presets in knot_presets_map:
+                                params["second_knot_positions"] = knot_presets_map[second_knot_presets]
+                                print(f"Using predefined second knot set: {second_knot_presets}")
+                            else:
+                                print(f"Warning: Unknown second knot preset: {second_knot_presets}")
+                    elif second_baseline_method == "interp_pts":
+                        params.update({
+                            "second_interp_method": second_interp_method,
+                        })
+                        
+                        # Handle second baseline points
+                        if second_baseline_points and second_baseline_points.strip():
+                            # Use custom wavenumbers for flat regions
+                            try:
+                                # Parse wavenumbers from text format
+                                wavenumbers_text = second_baseline_points.strip()
+                                wavenumber_list = [float(x.strip()) for x in wavenumbers_text.split(",")]
+                                
+                                # Find the closest wavenumber indices in the data
+                                wavenumber_indices = []
+                                for target_wavenumber in wavenumber_list:
+                                    # Find the closest wavenumber in the data
+                                    closest_idx = np.argmin(np.abs(self.wavenumbers - target_wavenumber))
+                                    wavenumber_indices.append(closest_idx)
+                                
+                                # Get the actual wavenumbers from the data
+                                actual_wavenumbers = [self.wavenumbers[idx] for idx in wavenumber_indices]
+                                
+                                # Calculate baseline intensities as the minimum value in each region
+                                # Use a more robust approach: take the minimum of the data, but ensure it's not too negative
+                                baseline_intensities = []
+                                for idx in wavenumber_indices:
+                                    # Use the minimum value in a small window around this point
+                                    window_start = max(0, idx - 5)
+                                    window_end = min(len(self.data[0]), idx + 6)
+                                    min_intensity = np.min(self.data[:, window_start:window_end])
+                                    
+                                    # Ensure the baseline is not too negative - cap it at 0 or a small negative value
+                                    if min_intensity < -0.1:  # If the minimum is very negative
+                                        # Use the 10th percentile instead, or cap at -0.05
+                                        percentile_intensity = np.percentile(self.data[:, window_start:window_end], 10)
+                                        baseline_intensities.append(max(percentile_intensity, -0.05))
+                                    else:
+                                        baseline_intensities.append(min_intensity)
+                                
+                                # Create baseline points
+                                points_list = []
+                                for i, (wavenumber, intensity) in enumerate(zip(actual_wavenumbers, baseline_intensities)):
+                                    points_list.append([wavenumber, intensity])
+                                
+                                # Add start and end points if not already included
+                                if len(points_list) == 0:
+                                    # No custom points, use default
+                                    min_data = np.min(self.data)
+                                    if min_data < -0.1:
+                                        min_data = max(np.percentile(self.data, 10), -0.05)
+                                    points_list = [[self.wavenumbers[0], min_data], [self.wavenumbers[-1], min_data]]
+                                else:
+                                    # Add start point if not already there
+                                    if points_list[0][0] > self.wavenumbers[0]:
+                                        start_intensity = np.min(self.data[:, :10])  # Use first 10 points
+                                        if start_intensity < -0.1:
+                                            start_intensity = max(np.percentile(self.data[:, :10], 10), -0.05)
+                                        points_list.insert(0, [self.wavenumbers[0], start_intensity])
+                                    
+                                    # Add end point if not already there
+                                    if points_list[-1][0] < self.wavenumbers[-1]:
+                                        end_intensity = np.min(self.data[:, -10:])  # Use last 10 points
+                                        if end_intensity < -0.1:
+                                            end_intensity = max(np.percentile(self.data[:, -10:], 10), -0.05)
+                                        points_list.append([self.wavenumbers[-1], end_intensity])
+                                
+                                params["second_baseline_points"] = points_list
+                                print(f"Using custom second flat regions at wavenumbers: {actual_wavenumbers}")
+                                print(f"Second baseline points: {points_list}")
+                            except Exception as e:
+                                print(f"Warning: Invalid second wavenumbers format: {second_baseline_points}, error: {str(e)}")
+                                # Fallback to default
+                                min_data = np.min(self.data)
+                                if min_data < -0.1:
+                                    min_data = max(np.percentile(self.data, 10), -0.05)
+                                params["second_baseline_points"] = [[self.wavenumbers[0], min_data], [self.wavenumbers[-1], min_data]]
+                        else:
+                            # Use predefined flat region presets for second correction
+                            if second_flat_region_presets == "auto_minima":
+                                # Auto-detect minima in the data
+                                from scipy.signal import find_peaks
+                                # Use the mean spectrum to find minima
+                                mean_spectrum = np.mean(self.data, axis=0)
+                                # Find minima (negative peaks)
+                                minima_indices, _ = find_peaks(-mean_spectrum, distance=20, prominence=0.01)
+                                
+                                if len(minima_indices) > 0:
+                                    # Take up to 5 minima, evenly spaced
+                                    if len(minima_indices) > 5:
+                                        step = len(minima_indices) // 5
+                                        minima_indices = minima_indices[::step][:5]
+                                    
+                                    points_list = []
+                                    for idx in minima_indices:
+                                        wavenumber = self.wavenumbers[idx]
+                                        window_start = max(0, idx-5)
+                                        window_end = min(len(self.data[0]), idx+6)
+                                        min_intensity = np.min(self.data[:, window_start:window_end])
+                                        
+                                        # Ensure the baseline is not too negative
+                                        if min_intensity < -0.1:
+                                            percentile_intensity = np.percentile(self.data[:, window_start:window_end], 10)
+                                            intensity = max(percentile_intensity, -0.05)
+                                        else:
+                                            intensity = min_intensity
+                                        
+                                        points_list.append([wavenumber, intensity])
+                                    
+                                    # Add start and end points
+                                    start_intensity = np.min(self.data[:, :10])
+                                    if start_intensity < -0.1:
+                                        start_intensity = max(np.percentile(self.data[:, :10], 10), -0.05)
+                                    
+                                    end_intensity = np.min(self.data[:, -10:])
+                                    if end_intensity < -0.1:
+                                        end_intensity = max(np.percentile(self.data[:, -10:], 10), -0.05)
+                                    points_list.insert(0, [self.wavenumbers[0], start_intensity])
+                                    points_list.append([self.wavenumbers[-1], end_intensity])
+                                    
+                                    params["second_baseline_points"] = points_list
+                                else:
+                                    # Fallback to start and end
+                                    min_data = np.min(self.data)
+                                    if min_data < -0.1:
+                                        min_data = max(np.percentile(self.data, 10), -0.05)
+                                    params["second_baseline_points"] = [[self.wavenumbers[0], min_data], [self.wavenumbers[-1], min_data]]
+                                    
+                            elif second_flat_region_presets == "quarter_points":
+                                # Use quarter points of the wavenumber range
+                                quarter_indices = [0, len(self.wavenumbers)//4, len(self.wavenumbers)//2, 3*len(self.wavenumbers)//4, len(self.wavenumbers)-1]
+                                points_list = []
+                                for idx in quarter_indices:
+                                    wavenumber = self.wavenumbers[idx]
+                                    window_start = max(0, idx - 5)
+                                    window_end = min(len(self.data[0]), idx + 6)
+                                    min_intensity = np.min(self.data[:, window_start:window_end])
+                                    
+                                    # Ensure the baseline is not too negative
+                                    if min_intensity < -0.1:
+                                        percentile_intensity = np.percentile(self.data[:, window_start:window_end], 10)
+                                        intensity = max(percentile_intensity, -0.05)
+                                    else:
+                                        intensity = min_intensity
+                                    
+                                    points_list.append([wavenumber, intensity])
+                                
+                                params["second_baseline_points"] = points_list
+                                
+                            elif second_flat_region_presets == "third_points":
+                                # Use third points of the wavenumber range
+                                third_indices = [0, len(self.wavenumbers)//3, 2*len(self.wavenumbers)//3, len(self.wavenumbers)-1]
+                                points_list = []
+                                for idx in third_indices:
+                                    wavenumber = self.wavenumbers[idx]
+                                    window_start = max(0, idx - 5)
+                                    window_end = min(len(self.data[0]), idx + 6)
+                                    min_intensity = np.min(self.data[:, window_start:window_end])
+                                    
+                                    # Ensure the baseline is not too negative
+                                    if min_intensity < -0.1:
+                                        percentile_intensity = np.percentile(self.data[:, window_start:window_end], 10)
+                                        intensity = max(percentile_intensity, -0.05)
+                                    else:
+                                        intensity = min_intensity
+                                    
+                                    points_list.append([wavenumber, intensity])
+                                
+                                params["second_baseline_points"] = points_list
+                                
+                            elif second_flat_region_presets == "start_end":
+                                # Just start and end points
+                                start_intensity = np.min(self.data[:, :10])
+                                if start_intensity < -0.1:
+                                    start_intensity = max(np.percentile(self.data[:, :10], 10), -0.05)
+                                
+                                end_intensity = np.min(self.data[:, -10:])
+                                if end_intensity < -0.1:
+                                    end_intensity = max(np.percentile(self.data[:, -10:], 10), -0.05)
+                                
+                                params["second_baseline_points"] = [[self.wavenumbers[0], start_intensity], [self.wavenumbers[-1], end_intensity]]
+                                
+                            else:
+                                # Default: use minimum of data
+                                min_data = np.min(self.data)
+                                if min_data < -0.1:
+                                    min_data = max(np.percentile(self.data, 10), -0.05)
+                                params["second_baseline_points"] = [[self.wavenumbers[0], min_data], [self.wavenumbers[-1], min_data]]
+                            
+                            print(f"Using preset second flat region: {second_flat_region_presets}")
                     
                     # Filter out None values and other problematic values
                     filtered_params = {}
@@ -1785,7 +2773,24 @@ class BaselineCorrectionApp:
             
             return imodpoly_style, quantile_style, rubberband_style, pspline_style, interp_style
 
-
+        @self.app.callback(
+            [
+                Output("second-imodpoly-params", "style"),
+                Output("second-quantile-params", "style"),
+                Output("second-rubberband-params", "style"),
+                Output("second-pspline-params", "style"),
+                Output("second-interp-params", "style"),
+            ],
+            [Input("second-baseline-method", "value")],
+        )
+        def toggle_second_parameter_sections(second_baseline_method):
+            imodpoly_style = {"display": "block"} if second_baseline_method == "imodpoly" else {"display": "none"}
+            quantile_style = {"display": "block"} if second_baseline_method == "quantile" else {"display": "none"}
+            rubberband_style = {"display": "block"} if second_baseline_method == "rubberband" else {"display": "none"}
+            pspline_style = {"display": "block"} if second_baseline_method == "pspline_arpls" else {"display": "none"}
+            interp_style = {"display": "block"} if second_baseline_method == "interp_pts" else {"display": "none"}
+            
+            return imodpoly_style, quantile_style, rubberband_style, pspline_style, interp_style
 
         @self.app.callback(
             Output("spatial-plot", "figure"),
