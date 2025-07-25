@@ -531,6 +531,10 @@ def baseline_correction_runner(
             corrected_data = apply_normalization(corrected_data, normalization_method)
             print(f"Applied normalization. Final data shape: {corrected_data.shape}")
 
+        # Initialize second baseline variables
+        second_baseline_data = np.zeros_like(baseline_data)
+        second_corrected_data = corrected_data
+        
         # Apply second baseline correction if specified
         if second_baseline_method != "none":
             print(f"Applying second baseline correction with method: {second_baseline_method}")
@@ -594,17 +598,73 @@ def baseline_correction_runner(
             )
             
             print(f"Applied second baseline correction. Second corrected data shape: {second_corrected_data.shape}")
+        else:
+            print("No second baseline correction applied")
+        
+        # Apply second normalization if specified
+        if second_normalization_method != "none":
+            print(f"Applying second normalization with method: {second_normalization_method}")
+            second_corrected_data = apply_normalization(second_corrected_data, second_normalization_method)
+            print(f"Applied second normalization. Final data shape: {second_corrected_data.shape}")
+        
+        # Apply fractional background return if specified
+        fractional_bg_return = params.get("fractional_bg_return", 0.1)  # Default 10%
+        if fractional_bg_return > 0:
+            print(f"Applying fractional background return: {fractional_bg_return*100:.1f}%")
             
-            # Apply second normalization if specified
-            if second_normalization_method != "none":
-                print(f"Applying second normalization with method: {second_normalization_method}")
-                second_corrected_data = apply_normalization(second_corrected_data, second_normalization_method)
-                print(f"Applied second normalization. Final data shape: {second_corrected_data.shape}")
+            # Calculate the actual baseline that was subtracted: working_data - second_corrected
+            # Note: working_data is the median-filtered data that was used for baseline correction
+            actual_baseline = working_data - second_corrected_data
             
-            # Use the second corrected data as the final result
-            corrected_data = second_corrected_data
-            # Combine the baseline data (add the second baseline to the first)
-            baseline_data = baseline_data + second_baseline_data
+            # Alternative: use the stored baseline data (first + second baseline)
+            stored_baseline = baseline_data + second_baseline_data
+            
+            # Calculate mean baseline for each spectrum individually
+            if actual_baseline.ndim == 2:  # Multiple spectra
+                # Calculate mean baseline for each spectrum separately
+                mean_baseline_per_spectrum = np.mean(actual_baseline, axis=1)
+                stored_mean_baseline_per_spectrum = np.mean(stored_baseline, axis=1)
+                
+                print(f"Mean baseline per spectrum (calculated): {np.mean(mean_baseline_per_spectrum):.6f} ± {np.std(mean_baseline_per_spectrum):.6f}")
+                print(f"Mean baseline per spectrum (stored): {np.mean(stored_mean_baseline_per_spectrum):.6f} ± {np.std(stored_mean_baseline_per_spectrum):.6f}")
+                
+                # Apply offset to each spectrum individually
+                for i in range(second_corrected_data.shape[0]):
+                    if mean_baseline_per_spectrum[i] >= 0:
+                        offset = fractional_bg_return * mean_baseline_per_spectrum[i]
+                        second_corrected_data[i] = second_corrected_data[i] + offset
+                    # If negative, no offset added
+                
+                print(f"Applied spectrum-specific fractional background return")
+                
+            else:  # Single spectrum
+                mean_baseline = np.mean(actual_baseline)
+                stored_baseline_mean = np.mean(stored_baseline)
+                
+                # Log baseline contributions for debugging
+                first_baseline_mean = np.mean(baseline_data)
+                second_baseline_mean = np.mean(second_baseline_data)
+                print(f"First baseline mean: {first_baseline_mean:.6f}")
+                print(f"Second baseline mean: {second_baseline_mean:.6f}")
+                print(f"Actual baseline mean (working_data - second_corrected): {mean_baseline:.6f}")
+                print(f"Stored baseline mean (first + second): {stored_baseline_mean:.6f}")
+                print(f"Actual baseline min: {np.min(actual_baseline):.6f}")
+                print(f"Actual baseline max: {np.max(actual_baseline):.6f}")
+                print(f"Working data mean: {np.mean(working_data):.6f}")
+                print(f"Second corrected data mean: {np.mean(second_corrected_data):.6f}")
+                
+                if mean_baseline >= 0:
+                    # Add back fraction of mean baseline as uniform offset
+                    offset = fractional_bg_return * mean_baseline
+                    second_corrected_data = second_corrected_data + offset
+                    print(f"Added back {offset:.6f} as uniform offset (mean baseline: {mean_baseline:.6f})")
+                else:
+                    print(f"Mean baseline is negative ({mean_baseline:.6f}), no offset added")
+        
+        # Use the second corrected data as the final result
+        corrected_data = second_corrected_data
+        # Combine the baseline data (add the second baseline to the first)
+        baseline_data = baseline_data + second_baseline_data
 
         # Store results in Redis
         r.set(corrected_key, corrected_data.tobytes())
@@ -1838,6 +1898,31 @@ class BaselineCorrectionApp:
                                                     ],
                                                     style={"display": "none"},
                                                 ),
+                                                
+                                                # Fractional Background Return parameters
+                                                html.Hr(),
+                                                html.H6("Post-processing Options", className="mb-3"),
+                                                dbc.Row(
+                                                    [
+                                                        dbc.Col(
+                                                            [
+                                                                html.Label("Fractional Background Return (%):"),
+                                                                dcc.Input(
+                                                                    id="fractional-bg-return",
+                                                                    type="number",
+                                                                    value=10.0,
+                                                                    min=0.0,
+                                                                    max=100.0,
+                                                                    step=0.1,
+                                                                    className="form-control",
+                                                                ),
+                                                                html.Small("Percentage of mean baseline to add back as uniform offset (applied after second baseline correction)", className="text-muted"),
+                                                            ],
+                                                            width=6,
+                                                        ),
+                                                    ],
+                                                    className="mb-3",
+                                                ),
                                             ]
                                         ),
                                     ]
@@ -2033,6 +2118,8 @@ class BaselineCorrectionApp:
                 State("second-interp-method", "value"),
                 State("second-baseline-points", "value"),
                 State("second-flat-region-presets", "value"),
+                # Fractional Background Return parameter
+                State("fractional-bg-return", "value"),
             ],
             prevent_initial_call=True,
         )
@@ -2107,6 +2194,8 @@ class BaselineCorrectionApp:
             second_interp_method,
             second_baseline_points,
             second_flat_region_presets,
+            # Fractional Background Return parameter
+            fractional_bg_return,
         ):
             ctx = dash.callback_context
             if not ctx.triggered:
@@ -2125,6 +2214,7 @@ class BaselineCorrectionApp:
                         "normalization_method": normalization_method,
                         "second_baseline_method": second_baseline_method,
                         "second_normalization_method": second_normalization_method,
+                        "fractional_bg_return": fractional_bg_return / 100.0 if fractional_bg_return is not None else 0.1,  # Convert percentage to decimal
                     }
                     
                     # Add method-specific parameters
@@ -2921,6 +3011,23 @@ class BaselineCorrectionApp:
                     "name": "Corrected (Original - Baseline)",
                     "showlegend": True,
                 })
+                
+                # If we have the final corrected data (with fractional background return), show it
+                if hasattr(self, 'corrected_data') and self.corrected_data is not None:
+                    try:
+                        final_corrected_spectrum = self.corrected_data[point_index]
+                        if len(final_corrected_spectrum) == len(self.wavenumbers):
+                            traces.append({
+                                "type": "scatter",
+                                "x": self.wavenumbers,
+                                "y": final_corrected_spectrum,
+                                "mode": "lines",
+                                "line": {"color": "rgb(0,128,0)", "width": 2},
+                                "name": "Final Corrected (with fractional background return)",
+                                "showlegend": True,
+                            })
+                    except Exception as e:
+                        print(f"Error getting final corrected data for point {point_index}: {str(e)}")
             else:
                 # If no baseline correction has been run, show message
                 traces.append({
