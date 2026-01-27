@@ -1,8 +1,8 @@
+import argparse
 import multiprocessing
 import os
-import tempfile
-import argparse
 import sys
+import tempfile
 from multiprocessing import Pipe, Process
 from time import sleep
 
@@ -12,7 +12,12 @@ import duckdb
 import numpy as np
 import pandas as pd
 import redis
+from dash import dcc, html
+from dash.dependencies import Input, Output, State
+from dash.exceptions import PreventUpdate
 from scipy.signal import savgol_filter
+from umap import UMAP
+
 from tools.dbtools import (
     add_column_to_table,
     append_df_to_table,
@@ -20,10 +25,6 @@ from tools.dbtools import (
     read_df_from_db,
     store_df_in_db,
 )
-from dash import dcc, html
-from dash.dependencies import Input, Output, State
-from dash.exceptions import PreventUpdate
-from umap import UMAP
 
 
 def create_wavenumber_mask(wavenumbers, range_string):
@@ -68,28 +69,32 @@ def create_wavenumber_mask(wavenumbers, range_string):
     return final_mask
 
 
-def apply_savgol_filter(data: np.ndarray, window_length: int, polyorder: int, derivative: int = 0) -> np.ndarray:
+def apply_savgol_filter(
+    data: np.ndarray, window_length: int, polyorder: int, derivative: int = 0
+) -> np.ndarray:
     """
     Apply Savitzky-Golay filter to the data
-    
+
     Args:
         data: Input data array (n_samples, n_features)
         window_length: Length of the filter window (must be odd)
         polyorder: Order of the polynomial used to fit the samples
         derivative: Order of the derivative to compute (0, 1, or 2)
-    
+
     Returns:
         Filtered data array
     """
     # Ensure window_length is odd
     if window_length % 2 == 0:
         window_length += 1
-    
+
     # Apply Savitzky-Golay filter to each spectrum
     filtered_data = np.zeros_like(data)
     for i in range(data.shape[0]):
-        filtered_data[i] = savgol_filter(data[i], window_length, polyorder, deriv=derivative)
-    
+        filtered_data[i] = savgol_filter(
+            data[i], window_length, polyorder, deriv=derivative
+        )
+
     return filtered_data
 
 
@@ -150,9 +155,13 @@ def umap_runner(
             window_length = params.get("window_length", 11)
             polyorder = params.get("polyorder", 3)
             derivative = params.get("derivative", 0)
-            
-            print(f"Applying Savitzky-Golay filter: window_length={window_length}, polyorder={polyorder}, derivative={derivative}")
-            selected_data = apply_savgol_filter(selected_data, window_length, polyorder, derivative)
+
+            print(
+                f"Applying Savitzky-Golay filter: window_length={window_length}, polyorder={polyorder}, derivative={derivative}"
+            )
+            selected_data = apply_savgol_filter(
+                selected_data, window_length, polyorder, derivative
+            )
             print(f"Data shape after Savitzky-Golay filtering: {selected_data.shape}")
 
         # Add spatial coordinates if weight > 0
@@ -316,9 +325,18 @@ class ConfigureUMAP:
                                                 dcc.Dropdown(
                                                     id="data-source",
                                                     options=[
-                                                        {"label": "Original Data (measured_data)", "value": "measured_data"},
-                                                        {"label": "Baseline Corrected Data (baseline_corrected_data)", "value": "baseline_corrected_data"},
-                                                        {"label": "Baseline Data (baseline_data)", "value": "baseline_data"},
+                                                        {
+                                                            "label": "Original Data (measured_data)",
+                                                            "value": "measured_data",
+                                                        },
+                                                        {
+                                                            "label": "Baseline Corrected Data (baseline_corrected_data)",
+                                                            "value": "baseline_corrected_data",
+                                                        },
+                                                        {
+                                                            "label": "Baseline Data (baseline_data)",
+                                                            "value": "baseline_data",
+                                                        },
                                                     ],
                                                     value="measured_data",
                                                     className="mb-2",
@@ -473,12 +491,20 @@ class ConfigureUMAP:
                                                     [
                                                         dbc.Col(
                                                             [
-                                                                html.Label("Preprocessing:"),
+                                                                html.Label(
+                                                                    "Preprocessing:"
+                                                                ),
                                                                 dcc.Dropdown(
                                                                     id="use-savgol",
                                                                     options=[
-                                                                        {"label": "No preprocessing", "value": False},
-                                                                        {"label": "Savitzky-Golay filter", "value": True},
+                                                                        {
+                                                                            "label": "No preprocessing",
+                                                                            "value": False,
+                                                                        },
+                                                                        {
+                                                                            "label": "Savitzky-Golay filter",
+                                                                            "value": True,
+                                                                        },
                                                                     ],
                                                                     value=False,
                                                                     className="form-control",
@@ -492,13 +518,24 @@ class ConfigureUMAP:
                                                     [
                                                         dbc.Col(
                                                             [
-                                                                html.Label("Derivative Order:"),
+                                                                html.Label(
+                                                                    "Derivative Order:"
+                                                                ),
                                                                 dcc.Dropdown(
                                                                     id="derivative",
                                                                     options=[
-                                                                        {"label": "No derivative (smoothing only)", "value": 0},
-                                                                        {"label": "First derivative", "value": 1},
-                                                                        {"label": "Second derivative", "value": 2},
+                                                                        {
+                                                                            "label": "No derivative (smoothing only)",
+                                                                            "value": 0,
+                                                                        },
+                                                                        {
+                                                                            "label": "First derivative",
+                                                                            "value": 1,
+                                                                        },
+                                                                        {
+                                                                            "label": "Second derivative",
+                                                                            "value": 2,
+                                                                        },
                                                                     ],
                                                                     value=0,
                                                                     disabled=True,
@@ -509,7 +546,9 @@ class ConfigureUMAP:
                                                         ),
                                                         dbc.Col(
                                                             [
-                                                                html.Label("Window Length:"),
+                                                                html.Label(
+                                                                    "Window Length:"
+                                                                ),
                                                                 dcc.Input(
                                                                     id="window-length",
                                                                     type="number",
@@ -528,7 +567,9 @@ class ConfigureUMAP:
                                                         ),
                                                         dbc.Col(
                                                             [
-                                                                html.Label("Polynomial Order:"),
+                                                                html.Label(
+                                                                    "Polynomial Order:"
+                                                                ),
                                                                 dcc.Input(
                                                                     id="polyorder",
                                                                     type="number",
@@ -716,13 +757,31 @@ class ConfigureUMAP:
                 # Validate Savitzky-Golay parameters
                 if use_savgol:
                     if window_length is None or window_length < 3:
-                        return ("Error: Window length must be at least 3", True, "Run UMAP", "danger", False)
-                    
+                        return (
+                            "Error: Window length must be at least 3",
+                            True,
+                            "Run UMAP",
+                            "danger",
+                            False,
+                        )
+
                     if polyorder is None or polyorder < 1 or polyorder >= window_length:
-                        return ("Error: Polynomial order must be >= 1 and < window_length", True, "Run UMAP", "danger", False)
-                    
+                        return (
+                            "Error: Polynomial order must be >= 1 and < window_length",
+                            True,
+                            "Run UMAP",
+                            "danger",
+                            False,
+                        )
+
                     if derivative is None or derivative < 0 or derivative > 2:
-                        return ("Error: Derivative order must be 0, 1, or 2", True, "Run UMAP", "danger", False)
+                        return (
+                            "Error: Derivative order must be 0, 1, or 2",
+                            True,
+                            "Run UMAP",
+                            "danger",
+                            False,
+                        )
 
                 try:
                     params = {
@@ -906,6 +965,41 @@ class ConfigureUMAP:
 
         @self.app.callback(
             [
+                Output("load-data-status", "children", allow_duplicate=True),
+                Output("load-data-status", "className", allow_duplicate=True),
+                Output("status-output", "children", allow_duplicate=True),
+                Output("run-button", "children", allow_duplicate=True),
+                Output("run-button", "color", allow_duplicate=True),
+                Output("run-button", "disabled", allow_duplicate=True),
+            ],
+            [Input("data-source", "value")],
+            prevent_initial_call=True,
+        )
+        def handle_data_source_change(data_source):
+            """Reload data when data source changes and clear UMAP results"""
+            if data_source and self.spectra is not None:
+                # Clear UMAP embedding since it was computed on different data
+                self.umap_embedding = None
+                status, color = self.load_data(data_source)
+                return (
+                    status,
+                    f"text-{color}",
+                    "Data source changed - UMAP results cleared",
+                    "Run UMAP",
+                    "primary",
+                    False,
+                )
+            return (
+                dash.no_update,
+                dash.no_update,
+                dash.no_update,
+                dash.no_update,
+                dash.no_update,
+                dash.no_update,
+            )
+
+        @self.app.callback(
+            [
                 Output("derivative", "disabled"),
                 Output("window-length", "disabled"),
                 Output("polyorder", "disabled"),
@@ -926,7 +1020,7 @@ class ConfigureUMAP:
             """Ensure window length is always odd"""
             if not use_savgol or window_length is None:
                 raise PreventUpdate
-            
+
             if window_length % 2 == 0:
                 return window_length + 1
             return window_length
@@ -950,10 +1044,14 @@ class ConfigureUMAP:
 
         @self.app.callback(
             Output("umap-scatter", "figure"),
-            [Input("selection-store", "data"), Input("status-output", "children")],
+            [
+                Input("selection-store", "data"),
+                Input("status-output", "children"),
+                Input("data-source", "value"),
+            ],
             prevent_initial_call=True,
         )
-        def update_umap_plot(selected_indices, status):
+        def update_umap_plot(selected_indices, status, data_source):
             if self.umap_embedding is not None:
                 selected_indices = selected_indices or []
 
@@ -996,20 +1094,36 @@ class ConfigureUMAP:
                         "uirevision": uirevision,  # Key for maintaining selection state
                     },
                 }
-            return dash.no_update
+            else:
+                # Return empty plot when no embedding is available
+                return {
+                    "data": [],
+                    "layout": {
+                        "title": "No UMAP embedding available - Run UMAP first",
+                        "xaxis": {"title": "UMAP 1"},
+                        "yaxis": {"title": "UMAP 2"},
+                        "showlegend": False,
+                    },
+                }
 
         @self.app.callback(
             Output("spectral-plot", "figure"),
-            [Input("selection-store", "data")],
-            [State("data-source", "value")],
+            [Input("selection-store", "data"), Input("data-source", "value")],
             prevent_initial_call=True,
         )
         def update_spectral_plot(selected_indices, data_source):
             if not selected_indices or self.spectra is None:
+                # Create title with data source information
+                data_source_label = {
+                    "measured_data": "Original Data",
+                    "baseline_corrected_data": "Baseline Corrected Data",
+                    "baseline_data": "Baseline Data",
+                }.get(data_source, data_source)
+
                 return {
                     "data": [],
                     "layout": {
-                        "title": "Select points to see spectral statistics",
+                        "title": f"Select points to see spectral statistics from {data_source_label}",
                         "xaxis": {"title": "Wavenumber (cm⁻¹)"},
                         "yaxis": {"title": "Intensity"},
                         "showlegend": True,
@@ -1062,8 +1176,8 @@ class ConfigureUMAP:
             # Create title with data source information
             data_source_label = {
                 "measured_data": "Original Data",
-                "baseline_corrected_data": "Baseline Corrected Data", 
-                "baseline_data": "Baseline Data"
+                "baseline_corrected_data": "Baseline Corrected Data",
+                "baseline_data": "Baseline Data",
             }.get(data_source, data_source)
 
             return {
@@ -1117,10 +1231,10 @@ class ConfigureUMAP:
                 # Create empty spectral plot with data source info
                 data_source_label = {
                     "measured_data": "Original Data",
-                    "baseline_corrected_data": "Baseline Corrected Data", 
-                    "baseline_data": "Baseline Data"
+                    "baseline_corrected_data": "Baseline Corrected Data",
+                    "baseline_data": "Baseline Data",
                 }.get(data_source, data_source)
-                
+
                 spectral_fig = {
                     "data": [],
                     "layout": {
@@ -1184,12 +1298,13 @@ class ConfigureUMAP:
 
                     data_source_label = {
                         "measured_data": "Original Data",
-                        "baseline_corrected_data": "Baseline Corrected Data", 
-                        "baseline_data": "Baseline Data"
+                        "baseline_corrected_data": "Baseline Corrected Data",
+                        "baseline_data": "Baseline Data",
                     }.get(data_source, data_source)
 
                     return html.Div(
-                        f"Embedding exported successfully from {data_source_label}!", className="text-success"
+                        f"Embedding exported successfully from {data_source_label}!",
+                        className="text-success",
                     )
                 except Exception as e:
                     return html.Div(
@@ -1244,11 +1359,11 @@ class ConfigureUMAP:
 
             # Check for required tables
             required_tables = ["wavenumbers", "measured_points", "HCD"]
-            
+
             # Add the selected data source to required tables
             if data_source not in required_tables:
                 required_tables.append(data_source)
-            
+
             for table in required_tables:
                 if not check_table_exists(conn, table):
                     conn.close()
@@ -1308,9 +1423,11 @@ class ConfigureUMAP:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Configure UMAP Application")
-    parser.add_argument("--port", type=int, default=8056, help="Port to run the server on")
+    parser.add_argument(
+        "--port", type=int, default=8056, help="Port to run the server on"
+    )
     parser.add_argument("--debug", action="store_true", help="Run in debug mode")
     args = parser.parse_args()
-    
+
     app = ConfigureUMAP()
     app.run(debug=args.debug, port=args.port)

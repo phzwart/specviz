@@ -119,21 +119,56 @@ def main():
     args = parser.parse_args()
 
     try:
-        # Load the NPZ file
+        # Load the NPZ file with pickle support
         print(f"Loading data from {args.npz_file}")
-        data = np.load(args.npz_file)
-        if "data_cube" not in data or "wavenumbers" not in data:
-            raise ValueError(
-                "NPZ file must contain 'data_cube' and 'wavenumbers' arrays"
-            )
+        data = np.load(args.npz_file, allow_pickle=True)
 
-        print(f"Loaded data_cube shape: {data['data_cube'].shape}")
-        print(f"Loaded wavenumbers shape: {data['wavenumbers'].shape}")
+        # Check if the file contains a dictionary with data_cube and wavenumbers
+        if len(data.keys()) == 1 and "arr_0" in data:
+            # The data is stored as a dictionary in arr_0
+            data_dict = data["arr_0"]
+            print(f"arr_0 type: {type(data_dict)}")
+
+            # Handle case where arr_0 is a numpy array containing the dictionary
+            if isinstance(data_dict, np.ndarray):
+                # Extract the dictionary from the numpy array
+                if data_dict.size == 1:
+                    data_dict = data_dict.item()
+                else:
+                    # If it's a larger array, try to get the first element
+                    data_dict = data_dict.flat[0]
+
+            print(f"Extracted data_dict type: {type(data_dict)}")
+            print(f"Extracted data_dict content: {data_dict}")
+
+            if isinstance(data_dict, dict):
+                print(f"Available keys in data_dict: {list(data_dict.keys())}")
+                if "data_cube" not in data_dict or "wavenumbers" not in data_dict:
+                    raise ValueError(
+                        f"NPZ file must contain 'data_cube' and 'wavenumbers' in arr_0. Found keys: {list(data_dict.keys())}"
+                    )
+                data_cube = data_dict["data_cube"]
+                wavenumbers = data_dict["wavenumbers"]
+            else:
+                raise ValueError(
+                    f"arr_0 must contain a dictionary with data_cube and wavenumbers, got {type(data_dict)}"
+                )
+        else:
+            # Direct access to data_cube and wavenumbers
+            if "data_cube" not in data or "wavenumbers" not in data:
+                raise ValueError(
+                    "NPZ file must contain 'data_cube' and 'wavenumbers' arrays"
+                )
+            data_cube = data["data_cube"]
+            wavenumbers = data["wavenumbers"]
+
+        print(f"Loaded data_cube shape: {data_cube.shape}")
+        print(f"Loaded wavenumbers shape: {wavenumbers.shape}")
 
         # Create instrument instance
         instrument = NumpyInstrument(
-            data["data_cube"],
-            data["wavenumbers"],
+            data_cube,
+            wavenumbers,
             redis_host=args.redis_host,
             redis_port=args.redis_port,
         )

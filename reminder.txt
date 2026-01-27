@@ -1,0 +1,4 @@
+redis-server --bind 127.0.0.1 --port 6379
+redis-cli shutdown
+
+python numpy_instrument.py ../../../notebooks/BP-area.npz

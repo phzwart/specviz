@@ -8,8 +8,8 @@ from dash import dcc, html
 from dash.dependencies import Input, Output, State
 from dash.exceptions import PreventUpdate
 
-from tools.dbtools import check_table_exists, read_df_from_db, store_df_in_db
 from specviz.tasks.spatial_latent_space_explorer import SpatialLatentSpaceExplorer
+from tools.dbtools import check_table_exists, read_df_from_db, store_df_in_db
 
 
 class ExploreEmbedding:
@@ -119,9 +119,18 @@ class ExploreEmbedding:
                                                 dcc.Dropdown(
                                                     id="data-source",
                                                     options=[
-                                                        {"label": "Original Data (measured_data)", "value": "measured_data"},
-                                                        {"label": "Baseline Corrected Data (baseline_corrected_data)", "value": "baseline_corrected_data"},
-                                                        {"label": "Baseline Data (baseline_data)", "value": "baseline_data"},
+                                                        {
+                                                            "label": "Original Data (measured_data)",
+                                                            "value": "measured_data",
+                                                        },
+                                                        {
+                                                            "label": "Baseline Corrected Data (baseline_corrected_data)",
+                                                            "value": "baseline_corrected_data",
+                                                        },
+                                                        {
+                                                            "label": "Baseline Data (baseline_data)",
+                                                            "value": "baseline_data",
+                                                        },
                                                     ],
                                                     value="measured_data",
                                                     className="mb-2",
@@ -507,6 +516,22 @@ class ExploreEmbedding:
             return dash.no_update, dash.no_update, dash.no_update
 
         @self.app.callback(
+            [
+                Output("load-data-status", "children", allow_duplicate=True),
+                Output("load-data-status", "className", allow_duplicate=True),
+                Output("data-loaded-store", "data", allow_duplicate=True),
+            ],
+            [Input("data-source", "value")],
+            prevent_initial_call=True,
+        )
+        def handle_data_source_change(data_source):
+            """Reload data when data source changes"""
+            if data_source and hasattr(self, "spectra") and self.spectra is not None:
+                status, color = self.load_data(data_source)
+                return status, f"text-{color}", True
+            return dash.no_update, dash.no_update, dash.no_update
+
+        @self.app.callback(
             [Output("umap-plot", "figure"), Output("spatial-plot", "figure")],
             [Input("data-loaded-store", "data"), Input("selection-store", "data")],
             prevent_initial_call=True,
@@ -696,8 +721,8 @@ class ExploreEmbedding:
                 Input("data-loaded-store", "data"),
                 Input("normalized-data-store", "data"),
                 Input("spectral-view-toggle", "value"),
+                Input("data-source", "value"),
             ],
-            [State("data-source", "value")],
             prevent_initial_call=True,
         )
         def update_spectral_plot(
@@ -707,10 +732,10 @@ class ExploreEmbedding:
                 # Create title with data source information
                 data_source_label = {
                     "measured_data": "Original Data",
-                    "baseline_corrected_data": "Baseline Corrected Data", 
-                    "baseline_data": "Baseline Data"
+                    "baseline_corrected_data": "Baseline Corrected Data",
+                    "baseline_data": "Baseline Data",
                 }.get(data_source, data_source)
-                
+
                 return {
                     "data": [],
                     "layout": {
@@ -735,8 +760,8 @@ class ExploreEmbedding:
                 # Create title with data source information
                 data_source_label = {
                     "measured_data": "Original Data",
-                    "baseline_corrected_data": "Baseline Corrected Data", 
-                    "baseline_data": "Baseline Data"
+                    "baseline_corrected_data": "Baseline Corrected Data",
+                    "baseline_data": "Baseline Data",
                 }.get(data_source, data_source)
                 title_prefix = f"Raw Spectra from {data_source_label}"
 
@@ -927,10 +952,32 @@ class ExploreEmbedding:
                 # Store back in DuckDB, overwriting the existing table
                 store_df_in_db(conn, embedding_df, "embedding", if_exists="replace")
 
+                # Find the next available snapshot number for external plotting table
+                snapshot_number = 0
+                while True:
+                    table_name = f"classifier_snapshot_{snapshot_number}"
+                    if not check_table_exists(conn, table_name):
+                        break
+                    snapshot_number += 1
+
+                # Create the snapshot DataFrame with the required columns for external plotting
+                snapshot_df = pd.DataFrame(
+                    {
+                        "hcd_indx": self.measured_indices,  # Point index from HCD table
+                        "umap_x": self.latent_coords[:, 0],  # UMAP x coordinate
+                        "umap_y": self.latent_coords[:, 1],  # UMAP y coordinate
+                        "selection": classification,  # Selection status (0 or 1)
+                    }
+                )
+
+                # Store the new snapshot table for external plotting
+                table_name = f"classifier_snapshot_{snapshot_number}"
+                store_df_in_db(conn, snapshot_df, table_name, if_exists="replace")
+
                 conn.close()
 
                 return (
-                    f"Classification exported successfully with {len(selected_indices)} selected points",
+                    f"Classification exported to embedding table and snapshot '{table_name}' created for external plotting with {len(selected_indices)} selected points",
                     "text-success",
                 )
 
@@ -993,11 +1040,11 @@ class ExploreEmbedding:
                 "level_scale",
                 "measured_data",
             ]
-            
+
             # Add the selected data source to required tables
             if data_source not in required_tables:
                 required_tables.append(data_source)
-            
+
             for table in required_tables:
                 if not check_table_exists(conn, table):
                     return f"Required table '{table}' not found in {db_path}", "danger"
@@ -1036,7 +1083,9 @@ class ExploreEmbedding:
             if "hcd_indx" in spectral_data_df.columns:
                 spectra = spectral_data_df.iloc[:, 1:].values  # Skip hcd_indx column
             else:
-                spectra = spectral_data_df.values  # Use all columns for tables without hcd_indx
+                spectra = (
+                    spectral_data_df.values
+                )  # Use all columns for tables without hcd_indx
 
             # Get corresponding X, Y coordinates from HCD for our indices
             spatial_coords = hcd_df.loc[measured_indices, ["X", "Y"]]

@@ -1,4 +1,4 @@
-from typing import Any, Dict, Union
+from typing import Any, Dict, List, Union
 
 import sqlite3
 
@@ -8,7 +8,7 @@ import pandas as pd
 
 
 def create_table_if_not_exists(
-    conn: Union[sqlite3.Connection, duckdb.DuckDBPyConnection]
+    conn: Union[sqlite3.Connection, duckdb.DuckDBPyConnection],
 ) -> None:
     """
     Creates a KeyValue table with a 'dict_name' column for both SQLite and DuckDB.
@@ -373,6 +373,150 @@ def add_column_to_table(
     print(final_df)
 
     print(f"\nSuccessfully added column '{column_name}' to table '{table_name}'")
+
+
+def read_experiment_data(
+    db_path: str,
+    table_name: str = None,
+    query: str = None,
+    return_metadata: bool = True,
+) -> Union[np.ndarray, Dict[str, Union[np.ndarray, pd.DataFrame]]]:
+    """
+    Read experiment data from DuckDB database and convert to numpy arrays for analysis.
+
+    Args:
+        db_path: Path to the DuckDB database file
+        table_name: Name of the table to read (if None, will list available tables)
+        query: Custom SQL query to execute (if provided, overrides table_name)
+        return_metadata: If True, returns a dict with data arrays and metadata.
+                        If False, returns just the numpy array.
+
+    Returns:
+        If return_metadata=True: Dict containing:
+            - 'data': numpy array of the main data
+            - 'columns': column names
+            - 'metadata': pandas DataFrame with additional info
+            - 'table_info': table structure information
+        If return_metadata=False: Just the numpy array
+    """
+    import duckdb
+
+    # Connect to the database
+    conn = duckdb.connect(db_path)
+
+    try:
+        # If no table_name or query provided, list available tables
+        if table_name is None and query is None:
+            tables = conn.execute("SHOW TABLES").fetchall()
+            print("Available tables:")
+            for table in tables:
+                print(f"  - {table[0]}")
+            return None
+
+        # Get table information
+        if query is None:
+            # Get table structure
+            table_info = conn.execute(f"DESCRIBE {table_name}").fetchall()
+            print(f"Table '{table_name}' structure:")
+            for col in table_info:
+                print(f"  {col[0]}: {col[1]}")
+
+            # Read the data
+            df = conn.execute(f"SELECT * FROM {table_name}").fetchdf()
+        else:
+            # Execute custom query
+            df = conn.execute(query).fetchdf()
+            print(f"Executed custom query, returned {len(df)} rows")
+
+        # Convert to numpy array
+        data_array = df.to_numpy()
+
+        if return_metadata:
+            result = {
+                "data": data_array,
+                "columns": df.columns.tolist(),
+                "metadata": df,
+                "shape": data_array.shape,
+                "dtypes": df.dtypes.to_dict(),
+            }
+
+            if query is None:
+                result["table_info"] = table_info
+                result["table_name"] = table_name
+
+            return result
+        else:
+            return data_array
+
+    finally:
+        conn.close()
+
+
+def list_experiment_tables(db_path: str) -> List[str]:
+    """
+    List all tables in the experiment database.
+
+    Args:
+        db_path: Path to the DuckDB database file
+
+    Returns:
+        List of table names
+    """
+    import duckdb
+
+    conn = duckdb.connect(db_path)
+    try:
+        tables = conn.execute("SHOW TABLES").fetchall()
+        return [table[0] for table in tables]
+    finally:
+        conn.close()
+
+
+def get_experiment_summary(db_path: str, table_name: str = None) -> Dict[str, Any]:
+    """
+    Get a summary of experiment data including basic statistics.
+
+    Args:
+        db_path: Path to the DuckDB database file
+        table_name: Name of the table to summarize (if None, summarizes all tables)
+
+    Returns:
+        Dictionary containing summary information
+    """
+    import duckdb
+
+    conn = duckdb.connect(db_path)
+    try:
+        if table_name is None:
+            # Summarize all tables
+            tables = list_experiment_tables(db_path)
+            summary = {}
+            for table in tables:
+                summary[table] = get_experiment_summary(db_path, table)
+            return summary
+        else:
+            # Get table summary
+            df = conn.execute(f"SELECT * FROM {table_name}").fetchdf()
+
+            summary = {
+                "table_name": table_name,
+                "rows": len(df),
+                "columns": len(df.columns),
+                "column_names": df.columns.tolist(),
+                "dtypes": df.dtypes.to_dict(),
+                "memory_usage": df.memory_usage(deep=True).sum(),
+                "null_counts": df.isnull().sum().to_dict(),
+            }
+
+            # Add basic statistics for numeric columns
+            numeric_cols = df.select_dtypes(include=[np.number]).columns
+            if len(numeric_cols) > 0:
+                summary["numeric_stats"] = df[numeric_cols].describe().to_dict()
+
+            return summary
+
+    finally:
+        conn.close()
 
 
 if __name__ == "__main__":
